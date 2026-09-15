@@ -1,4 +1,4 @@
-const CACHE_NAME = 'camping-app-v1';
+const CACHE_NAME = 'camping-app-v2';
 const ASSETS = [
   './',
   './index.html',

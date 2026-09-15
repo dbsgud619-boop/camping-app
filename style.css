@@ -291,8 +291,63 @@ body {
 /* ---- 준비물 ---- */
 .gear-add {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.gear-add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.scope-chips {
+  display: flex;
+  gap: 6px;
+}
+
+.scope-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 5px 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.scope-chip.active {
+  background: var(--surface-2);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.gear-section {
+  margin-bottom: 18px;
+}
+
+.gear-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+.gear-section-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.gear-section-hint {
+  font-size: 0.74rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gear-add input {
@@ -392,18 +447,39 @@ body {
   text-decoration: line-through;
 }
 
-.gear-del {
+.gear-actions {
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gear-act {
   background: none;
   border: none;
   color: var(--text-dim);
-  font-size: 1.05rem;
-  padding: 4px 6px;
+  padding: 6px 7px;
   cursor: pointer;
   line-height: 1;
   font-family: inherit;
+  border-radius: 7px;
 }
-.gear-del:active { color: var(--danger); }
+
+.gear-edit { font-size: 1rem; }
+.gear-edit:active { color: var(--primary); background: rgba(76, 175, 110, 0.14); }
+
+.gear-del { font-size: 1.05rem; }
+.gear-del:active { color: var(--danger); background: rgba(239, 83, 80, 0.14); }
+
+.gear-promote {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--ember);
+  border: 1px solid rgba(227, 154, 60, 0.4);
+  padding: 5px 8px;
+  white-space: nowrap;
+}
+.gear-promote:active { background: rgba(227, 154, 60, 0.18); }
 
 /* ---- 식단 ---- */
 .day-card {

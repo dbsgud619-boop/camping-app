@@ -2,6 +2,8 @@
 const LS_TRIPS = 'campingApp.trips.v1';
 const LS_ACTIVE_TRIP = 'campingApp.activeTrip.v1';
 const LS_SUB_TAB = 'campingApp.subTab.v1';
+const LS_SHARED_GEAR = 'campingApp.sharedGear.v1';
+const LS_ADD_SCOPE = 'campingApp.addScope.v1';
 
 const DAY_MS = 86400000;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -17,21 +19,51 @@ const MEALS = [
 ];
 
 // ---- state ----
+// 준비물은 두 갈래입니다.
+//   sharedGear  : 모든 일정에 함께 나오는 공용 목록 (텐트, 침낭 …)
+//   trip.gear   : 그 일정에만 필요한 항목 (낚시대 …)
+//   trip.checks : 공용 항목을 이 일정에서 챙겼는지 (체크는 일정별로 따로)
 let trips = loadTrips();
+let sharedGear = loadSharedGear();
 let activeTripId = localStorage.getItem(LS_ACTIVE_TRIP) || (trips[0] ? trips[0].id : null);
 let activeSubTab = localStorage.getItem(LS_SUB_TAB) || 'gear';
+let addScope = localStorage.getItem(LS_ADD_SCOPE) === 'trip' ? 'trip' : 'shared';
+
+/** 예전 버전에서 저장된 일정에도 빠진 칸을 채워 둡니다. */
+function normalizeTrip(trip) {
+  if (!Array.isArray(trip.gear)) trip.gear = [];
+  if (!trip.checks || typeof trip.checks !== 'object') trip.checks = {};
+  if (!trip.meals || typeof trip.meals !== 'object') trip.meals = {};
+  return trip;
+}
 
 function loadTrips() {
   try {
     const raw = localStorage.getItem(LS_TRIPS);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map(normalizeTrip) : [];
   } catch (e) {
     return [];
   }
 }
 function saveTrips() {
   localStorage.setItem(LS_TRIPS, JSON.stringify(trips));
+}
+function loadSharedGear() {
+  try {
+    const raw = localStorage.getItem(LS_SHARED_GEAR);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+function saveSharedGear() {
+  localStorage.setItem(LS_SHARED_GEAR, JSON.stringify(sharedGear));
+}
+function setAddScope(scope) {
+  addScope = scope;
+  localStorage.setItem(LS_ADD_SCOPE, scope);
 }
 function setActiveTrip(id) {
   activeTripId = id;
@@ -89,8 +121,18 @@ function rangeLabel(trip) {
 function getActiveTrip() {
   return trips.find((t) => t.id === activeTripId) || null;
 }
+function gearTotalCount(trip) {
+  return sharedGear.length + trip.gear.length;
+}
 function gearDoneCount(trip) {
-  return trip.gear.filter((g) => g.done).length;
+  const sharedDone = sharedGear.filter((g) => trip.checks[g.id]).length;
+  return sharedDone + trip.gear.filter((g) => g.done).length;
+}
+/** 같은 이름이 공용에도 이번 일정에도 없을 때만 true */
+function isNewGearText(trip, text) {
+  const norm = text.replace(/\s+/g, ' ').trim();
+  const clash = (g) => g.text.replace(/\s+/g, ' ').trim() === norm;
+  return !sharedGear.some(clash) && !trip.gear.some(clash);
 }
 function mealFilledCount(trip, iso) {
   const day = trip.meals[iso] || {};
@@ -218,7 +260,7 @@ function buildSubTabs(trip) {
   wrap.className = 'sub-tabs';
 
   const tabs = [
-    { key: 'gear', label: '준비물', count: `${gearDoneCount(trip)}/${trip.gear.length}` },
+    { key: 'gear', label: '준비물', count: `${gearDoneCount(trip)}/${gearTotalCount(trip)}` },
     { key: 'meals', label: '식단', count: `${mealTotalFilled(trip)}칸` },
   ];
 
@@ -258,6 +300,9 @@ function buildGear(trip, body) {
   const form = document.createElement('form');
   form.className = 'gear-add';
 
+  const row = document.createElement('div');
+  row.className = 'gear-add-row';
+
   const input = document.createElement('input');
   input.type = 'text';
   input.placeholder = '준비물을 적고 추가하세요 (예: 텐트)';
@@ -269,14 +314,54 @@ function buildGear(trip, body) {
   addBtn.className = 'btn btn-primary';
   addBtn.textContent = '추가';
 
-  form.appendChild(input);
-  form.appendChild(addBtn);
+  row.appendChild(input);
+  row.appendChild(addBtn);
+
+  // 어디에 넣을지 고르는 칩. 고른 값은 다음에도 기억합니다.
+  const chips = document.createElement('div');
+  chips.className = 'scope-chips';
+
+  const scopes = [
+    { key: 'shared', label: '공용', hint: '모든 일정에 함께' },
+    { key: 'trip', label: '이번 일정만', hint: '이 일정에만' },
+  ];
+
+  scopes.forEach((scope) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'scope-chip' + (scope.key === addScope ? ' active' : '');
+    chip.textContent = scope.label;
+    chip.addEventListener('click', () => {
+      setAddScope(scope.key);
+      chips.querySelectorAll('.scope-chip').forEach((c, i) => {
+        c.classList.toggle('active', scopes[i].key === addScope);
+      });
+      input.focus();
+    });
+    chips.appendChild(chip);
+  });
+
+  form.appendChild(row);
+  form.appendChild(chips);
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const text = input.value.trim();
     if (!text) return;
-    trip.gear.push({ id: newId(), text, done: false });
-    saveTrips();
+
+    if (!isNewGearText(trip, text)) {
+      showToast(`'${text}'은(는) 이미 목록에 있어요`);
+      return;
+    }
+
+    if (addScope === 'shared') {
+      sharedGear.push({ id: newId(), text });
+      saveSharedGear();
+    } else {
+      trip.gear.push({ id: newId(), text, done: false });
+      saveTrips();
+    }
+
     input.value = '';
     input.focus(); // 연달아 적을 수 있게 입력칸을 붙잡아 둡니다.
     refreshGear(trip);
@@ -286,16 +371,15 @@ function buildGear(trip, body) {
   progress.className = 'gear-progress';
   progress.id = 'gearProgress';
 
-  const list = document.createElement('ul');
-  list.className = 'gear-list';
-  list.id = 'gearList';
+  const lists = document.createElement('div');
+  lists.id = 'gearLists';
 
   body.appendChild(form);
   body.appendChild(progress);
-  body.appendChild(list);
+  body.appendChild(lists);
 
   renderGearProgress(trip);
-  renderGearList(trip);
+  renderGearLists(trip);
 }
 
 function renderGearProgress(trip) {
@@ -303,7 +387,7 @@ function renderGearProgress(trip) {
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  const total = trip.gear.length;
+  const total = gearTotalCount(trip);
   if (total === 0) {
     wrap.classList.add('hidden');
     return;
@@ -327,61 +411,212 @@ function renderGearProgress(trip) {
   wrap.appendChild(text);
 }
 
-function renderGearList(trip) {
-  const list = document.getElementById('gearList');
-  if (!list) return;
-  list.innerHTML = '';
+/** 준비물 한 줄. 체크는 줄 전체, 나머지 버튼은 각자 동작합니다. */
+function buildGearRow(item, options) {
+  const li = document.createElement('li');
+  li.className = 'gear-item' + (options.done ? ' done' : '');
 
-  if (trip.gear.length === 0) {
+  const check = document.createElement('span');
+  check.className = 'gear-check';
+  check.textContent = '✓';
+
+  const text = document.createElement('span');
+  text.className = 'gear-text';
+  text.textContent = item.text;
+
+  const actions = document.createElement('span');
+  actions.className = 'gear-actions';
+
+  if (options.onPromote) {
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'gear-act gear-promote';
+    up.textContent = '공용으로';
+    up.setAttribute('aria-label', `${item.text}을(를) 공용 준비물로 옮기기`);
+    up.addEventListener('click', (e) => {
+      e.stopPropagation();
+      options.onPromote();
+    });
+    actions.appendChild(up);
+  }
+
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'gear-act gear-edit';
+  edit.textContent = '✎';
+  edit.setAttribute('aria-label', `${item.text} 이름 수정`);
+  edit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    options.onEdit();
+  });
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'gear-act gear-del';
+  del.textContent = '✕';
+  del.setAttribute('aria-label', `${item.text} 삭제`);
+  del.addEventListener('click', (e) => {
+    e.stopPropagation(); // 삭제를 눌렀을 때 체크까지 되지 않게
+    options.onDelete();
+  });
+
+  actions.appendChild(edit);
+  actions.appendChild(del);
+
+  li.appendChild(check);
+  li.appendChild(text);
+  li.appendChild(actions);
+
+  // 줄 아무 데나 눌러도 체크됩니다.
+  li.addEventListener('click', options.onToggle);
+  return li;
+}
+
+function buildGearSection(title, hint, items, emptyText) {
+  const section = document.createElement('section');
+  section.className = 'gear-section';
+
+  const head = document.createElement('div');
+  head.className = 'gear-section-head';
+
+  const titleEl = document.createElement('span');
+  titleEl.className = 'gear-section-title';
+  titleEl.textContent = title;
+
+  const hintEl = document.createElement('span');
+  hintEl.className = 'gear-section-hint';
+  hintEl.textContent = hint;
+
+  head.appendChild(titleEl);
+  head.appendChild(hintEl);
+  section.appendChild(head);
+
+  const list = document.createElement('ul');
+  list.className = 'gear-list';
+
+  if (items.length === 0) {
     const empty = document.createElement('li');
     empty.className = 'list-empty';
-    empty.textContent = '준비물을 하나씩 추가해 보세요.';
+    empty.textContent = emptyText;
     list.appendChild(empty);
+  } else {
+    items.forEach((li) => list.appendChild(li));
+  }
+
+  section.appendChild(list);
+  return section;
+}
+
+function renderGearLists(trip) {
+  const wrap = document.getElementById('gearLists');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+
+  // 공용 준비물
+  const sharedRows = sharedGear.map((item) =>
+    buildGearRow(item, {
+      done: !!trip.checks[item.id],
+      onToggle: () => {
+        if (trip.checks[item.id]) delete trip.checks[item.id];
+        else trip.checks[item.id] = true;
+        saveTrips();
+        refreshGear(trip);
+      },
+      onEdit: () => editGearText(trip, item, 'shared'),
+      onDelete: () => deleteSharedGear(trip, item),
+    })
+  );
+
+  wrap.appendChild(
+    buildGearSection(
+      '공용 준비물',
+      '모든 일정에 함께 들어가요',
+      sharedRows,
+      '공용으로 쓸 준비물을 추가해 보세요.'
+    )
+  );
+
+  // 이번 일정에만 있는 준비물 (있을 때만 보여줍니다)
+  if (trip.gear.length > 0) {
+    const tripRows = trip.gear.map((item) =>
+      buildGearRow(item, {
+        done: item.done,
+        onToggle: () => {
+          item.done = !item.done;
+          saveTrips();
+          refreshGear(trip);
+        },
+        onEdit: () => editGearText(trip, item, 'trip'),
+        onDelete: () => {
+          trip.gear = trip.gear.filter((g) => g.id !== item.id);
+          saveTrips();
+          refreshGear(trip);
+        },
+        onPromote: () => promoteToShared(trip, item),
+      })
+    );
+
+    wrap.appendChild(
+      buildGearSection('이번 일정만', trip.place, tripRows, '')
+    );
+  }
+}
+
+/** 이름 수정. 공용 항목을 고치면 모든 일정에서 같이 바뀝니다. */
+function editGearText(trip, item, scope) {
+  const next = window.prompt('준비물 이름을 고칩니다', item.text);
+  if (next === null) return;
+
+  const text = next.trim();
+  if (!text) {
+    showToast('이름을 비워둘 수는 없어요');
+    return;
+  }
+  if (text === item.text) return;
+  if (!isNewGearText(trip, text)) {
+    showToast(`'${text}'은(는) 이미 목록에 있어요`);
     return;
   }
 
-  trip.gear.forEach((item) => {
-    const li = document.createElement('li');
-    li.className = 'gear-item' + (item.done ? ' done' : '');
+  item.text = text;
+  if (scope === 'shared') saveSharedGear();
+  else saveTrips();
+  refreshGear(trip);
+}
 
-    const check = document.createElement('span');
-    check.className = 'gear-check';
-    check.textContent = '✓';
+/** 공용 항목 삭제는 모든 일정에 영향을 주므로 한 번 물어봅니다. */
+function deleteSharedGear(trip, item) {
+  const others = trips.length - 1;
+  const warning = others > 0
+    ? `'${item.text}'은(는) 공용 준비물이에요.\n다른 일정 ${others}개에서도 함께 사라집니다. 지울까요?`
+    : `'${item.text}'을(를) 지울까요?`;
+  if (!window.confirm(warning)) return;
 
-    const text = document.createElement('span');
-    text.className = 'gear-text';
-    text.textContent = item.text;
+  sharedGear = sharedGear.filter((g) => g.id !== item.id);
+  saveSharedGear();
 
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'gear-del';
-    del.textContent = '✕';
-    del.setAttribute('aria-label', `${item.text} 삭제`);
-    del.addEventListener('click', (e) => {
-      e.stopPropagation(); // 삭제를 눌렀을 때 체크까지 되지 않게
-      trip.gear = trip.gear.filter((g) => g.id !== item.id);
-      saveTrips();
-      refreshGear(trip);
-    });
+  // 남아 있는 체크 기록도 같이 정리합니다.
+  trips.forEach((t) => { delete t.checks[item.id]; });
+  saveTrips();
 
-    li.appendChild(check);
-    li.appendChild(text);
-    li.appendChild(del);
+  refreshGear(trip);
+}
 
-    // 줄 아무 데나 눌러도 체크됩니다.
-    li.addEventListener('click', () => {
-      item.done = !item.done;
-      saveTrips();
-      refreshGear(trip);
-    });
+/** 이 일정에만 있던 항목을 공용으로 옮깁니다. 체크 상태는 그대로 가져갑니다. */
+function promoteToShared(trip, item) {
+  trip.gear = trip.gear.filter((g) => g.id !== item.id);
+  sharedGear.push({ id: item.id, text: item.text });
+  if (item.done) trip.checks[item.id] = true;
 
-    list.appendChild(li);
-  });
+  saveSharedGear();
+  saveTrips();
+  refreshGear(trip);
+  showToast(`'${item.text}'을(를) 공용으로 옮겼어요`);
 }
 
 /** 준비물만 다시 그립니다. 입력칸 포커스를 잃지 않도록 패널 전체는 건드리지 않습니다. */
 function refreshGear(trip) {
-  renderGearList(trip);
+  renderGearLists(trip);
   renderGearProgress(trip);
   refreshSubTabCounts(trip);
 }
@@ -389,7 +624,7 @@ function refreshGear(trip) {
 function refreshSubTabCounts(trip) {
   const counts = document.querySelectorAll('.sub-tab-count');
   if (counts.length < 2) return;
-  counts[0].textContent = `${gearDoneCount(trip)}/${trip.gear.length}`;
+  counts[0].textContent = `${gearDoneCount(trip)}/${gearTotalCount(trip)}`;
   counts[1].textContent = `${mealTotalFilled(trip)}칸`;
 }
 
@@ -479,7 +714,8 @@ function addTrip(start, end, place) {
     start,
     end,
     createdAt: Date.now(),
-    gear: [],
+    gear: [],    // 이 일정에만 필요한 항목
+    checks: {},  // 공용 항목은 새 일정에서 전부 체크 해제로 시작합니다
     meals: {},
   };
   trips.push(trip);
@@ -487,7 +723,12 @@ function addTrip(start, end, place) {
   saveTrips();
   setActiveTrip(trip.id);
   renderAll();
-  showToast(`${place} 캠핑을 추가했어요`);
+
+  showToast(
+    sharedGear.length > 0
+      ? `${place} 캠핑 추가 · 공용 준비물 ${sharedGear.length}개가 들어갔어요`
+      : `${place} 캠핑을 추가했어요`
+  );
 }
 
 function renameTrip(trip) {
