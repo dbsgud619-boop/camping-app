@@ -13,6 +13,6 @@
      자기 방에 드나들 수 있습니다.
    =========================================================== */
 window.CAMP_SUPABASE = {
-  url: '',
-  anonKey: '',
+  url: 'https://ctjinobcioovomjoryjt.supabase.co',
+  anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0amlub2JjaW9vdm9tam9yeWp0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NTM3MzgsImV4cCI6MjEwNDUyOTczOH0.y1h4opyv9yq_K8rhR8-F1mJgZ0nyztz7LaQMy0QeFek',
 };
