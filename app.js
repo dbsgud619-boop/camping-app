@@ -13,11 +13,11 @@ const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 // main : 아침·점심·저녁은 주 끼니라 굵게, 나머지는 곁들이는 끼니라 흐리게
 const MEALS = [
   { key: 'morning', label: '아침', hint: '', main: true },
-  { key: 'brunch', label: '아점', hint: '추가', main: false },
+  { key: 'brunch', label: '아점', hint: '보조 식사', main: false },
   { key: 'lunch', label: '점심', hint: '', main: true },
-  { key: 'linner', label: '점저', hint: '추가', main: false },
+  { key: 'linner', label: '점저', hint: '보조 식사', main: false },
   { key: 'dinner', label: '저녁', hint: '', main: true },
-  { key: 'night', label: '야간', hint: '추가', main: false },
+  { key: 'night', label: '야간', hint: '보조 식사', main: false },
 ];
 
 // ---- state ----
