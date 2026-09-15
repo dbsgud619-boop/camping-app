@@ -1,17 +1,29 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
-  <rect width="192" height="192" rx="40" fill="#101a14"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="192" height="192" rx="44" fill="url(#bg)"/>
+  <rect width="192" height="192" rx="44" fill="url(#gloss)"/>
 
   <!-- 달 -->
-  <circle cx="141" cy="52" r="13" fill="#e39a3c" opacity="0.9"/>
+  <circle cx="143" cy="50" r="12" fill="#ffffff" opacity="0.7"/>
 
   <!-- 텐트 -->
-  <path d="M96 48 L156 146 H36 Z" fill="#4caf6e"/>
-  <path d="M96 48 L156 146 H96 Z" fill="#3d9a5d"/>
+  <path d="M96 48 L156 146 H36 Z" fill="#ffffff" opacity="0.96"/>
+  <path d="M96 48 L156 146 H96 Z" fill="#d1fae5" opacity="0.95"/>
 
   <!-- 입구 -->
-  <path d="M96 84 L124 146 H68 Z" fill="#101a14"/>
-  <path d="M96 84 L110 146 H96 Z" fill="#17241c"/>
+  <path d="M96 84 L124 146 H68 Z" fill="#059669"/>
+  <path d="M96 84 L110 146 H96 Z" fill="#047857"/>
 
   <!-- 바닥 -->
-  <rect x="28" y="146" width="136" height="9" rx="4.5" fill="#2f4738"/>
+  <rect x="28" y="146" width="136" height="9" rx="4.5" fill="#ffffff" opacity="0.75"/>
 </svg>

@@ -160,7 +160,7 @@ const CACHE_NAME = 'camping-app-v2';   // v1 → v2 로
 ```
 camping_app/
 ├─ index.html          화면 뼈대
-├─ style.css           어두운 숲 색 테마
+├─ style.css           에메랄드 글래스모피즘 테마
 ├─ app.js              전부 여기에 (날짜 계산, 탭, 준비물, 식단, 저장)
 ├─ manifest.json       설치 정보 (이름, 아이콘, 색)
 ├─ service-worker.js   오프라인 캐시
