@@ -35,7 +35,7 @@ const MEALS = [
   { key: 'lunch', label: '점심', hint: '', main: true },
   { key: 'linner', label: '점저', hint: '-', main: false, preset: '-' },
   { key: 'dinner', label: '저녁', hint: '', main: true },
-  { key: 'night', label: '야간', hint: '-', main: false },
+  { key: 'night', label: '야간', hint: '-', main: false, preset: '-' },
 ];
 
 /** '-' 만 적힌 칸은 그 끼니를 건너뛴다는 뜻이라 회색으로 눕혀 둡니다. */
