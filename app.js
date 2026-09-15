@@ -9,15 +9,15 @@ const DAY_MS = 86400000;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 // ---- 하루에 기입할 수 있는 끼니 ----
-// hint 는 빈 칸에 흐리게 보이는 안내 문구입니다.
-// 아점·점저·야간은 챙겨 먹을 때만 적는 끼니라 '추가'로 표시합니다.
+// hint : 빈 칸에 흐리게 보이는 안내 문구
+// main : 아침·점심·저녁은 주 끼니라 굵게, 나머지는 곁들이는 끼니라 흐리게
 const MEALS = [
-  { key: 'morning', label: '아침', hint: '' },
-  { key: 'brunch', label: '아점', hint: '추가' },
-  { key: 'lunch', label: '점심', hint: '' },
-  { key: 'linner', label: '점저', hint: '추가' },
-  { key: 'dinner', label: '저녁', hint: '' },
-  { key: 'night', label: '야간', hint: '추가' },
+  { key: 'morning', label: '아침', hint: '', main: true },
+  { key: 'brunch', label: '아점', hint: '추가', main: false },
+  { key: 'lunch', label: '점심', hint: '', main: true },
+  { key: 'linner', label: '점저', hint: '추가', main: false },
+  { key: 'dinner', label: '저녁', hint: '', main: true },
+  { key: 'night', label: '야간', hint: '추가', main: false },
 ];
 
 // ---- state ----
@@ -666,14 +666,16 @@ function buildMeals(trip, body) {
       const inputId = `meal-${iso}-${meal.key}`;
 
       const label = document.createElement('label');
-      label.className = 'meal-label';
+      label.className = 'meal-label' + (meal.main ? ' main' : '');
       label.textContent = meal.label;
       label.setAttribute('for', inputId);
 
       const input = document.createElement('input');
       input.type = 'text';
       input.id = inputId;
-      input.className = 'meal-input' + ((day[meal.key] || '').trim() ? ' filled' : '');
+      input.className = 'meal-input'
+        + (meal.main ? ' main' : '')
+        + ((day[meal.key] || '').trim() ? ' filled' : '');
       input.placeholder = meal.hint;
       input.value = day[meal.key] || '';
       input.maxLength = 80;

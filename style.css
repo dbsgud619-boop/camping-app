@@ -3,6 +3,7 @@
   --surface: #1a2a20;
   --surface-2: #22362a;
   --border: #2f4738;
+  --border-strong: #436049;
   --text: #e6efe8;
   --text-dim: #93a89a;
   --primary: #4caf6e;
@@ -525,11 +526,19 @@ body {
 }
 .meal-row:last-child { margin-bottom: 0; }
 
+/* 곁들이는 끼니 (아점·점저·야간) */
 .meal-label {
   flex: 0 0 42px;
   font-size: 0.83rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text-dim);
+}
+
+/* 주 끼니 (아침·점심·저녁) */
+.meal-label.main {
+  font-weight: 800;
+  font-size: 0.88rem;
+  color: var(--text);
 }
 
 .meal-input {
@@ -545,6 +554,15 @@ body {
   font-family: inherit;
 }
 .meal-input::placeholder { color: #55665c; }
+
+/* 주 끼니 칸은 테두리와 글씨를 한 단계 굵게.
+   아래 :focus / .filled 규칙이 뒤에 와서 그때는 그쪽 색이 이깁니다. */
+.meal-input.main {
+  border-color: var(--border-strong);
+  font-weight: 600;
+  color: var(--text);
+}
+
 .meal-input:focus {
   outline: none;
   border-color: var(--ember);
