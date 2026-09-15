@@ -704,48 +704,67 @@ function refreshSubTabCounts(trip) {
 }
 
 // ---- 식단 탭 ----
-function buildMeals(trip, body) {
-  datesOf(trip).forEach((iso, index) => {
-    if (!trip.meals[iso]) trip.meals[iso] = {};
-    const day = trip.meals[iso];
+// 일차를 가로로 세 칸씩 늘어놓고, 끼니 이름은 맨 왼쪽에 한 번만 적습니다.
+// 날짜가 3일을 넘으면 다음 묶음을 아래에 이어 붙입니다.
+const DAYS_PER_GRID = 3;
 
-    const card = document.createElement('section');
-    card.className = 'day-card';
+function buildMeals(trip, body) {
+  const dates = datesOf(trip);
+  for (let from = 0; from < dates.length; from += DAYS_PER_GRID) {
+    const group = dates.slice(from, from + DAYS_PER_GRID);
+    body.appendChild(buildMealGrid(trip, group, from));
+  }
+}
+
+function buildMealGrid(trip, isoList, offset) {
+  const grid = document.createElement('div');
+  grid.className = 'meal-grid';
+  grid.style.setProperty('--cols', String(isoList.length));
+
+  // 왼쪽 위 빈 칸 (끼니 이름 열의 머리)
+  const corner = document.createElement('div');
+  corner.className = 'mg-corner';
+  grid.appendChild(corner);
+
+  // 첫 줄: 일차 머리말
+  const counters = {};
+  isoList.forEach((iso, i) => {
+    if (!trip.meals[iso]) trip.meals[iso] = {};
 
     const head = document.createElement('div');
-    head.className = 'day-head';
+    head.className = 'mg-day';
 
-    const dayIndex = document.createElement('span');
-    dayIndex.className = 'day-index';
-    dayIndex.textContent = `${index + 1}일차`;
+    const index = document.createElement('span');
+    index.className = 'mg-day-index';
+    index.textContent = `${offset + i + 1}일차`;
 
-    const dayDate = document.createElement('span');
-    dayDate.className = 'day-date';
-    dayDate.textContent = shortDate(iso);
+    const date = document.createElement('span');
+    date.className = 'mg-day-date';
+    date.textContent = shortDate(iso);
 
-    const filled = document.createElement('span');
-    filled.className = 'day-filled';
-    filled.textContent = `${mealFilledCount(trip, iso)}/${MEALS.length}`;
+    const count = document.createElement('span');
+    count.className = 'mg-day-count';
+    count.textContent = `${mealFilledCount(trip, iso)}/${MEALS.length}`;
+    counters[iso] = count;
 
-    head.appendChild(dayIndex);
-    head.appendChild(dayDate);
-    head.appendChild(filled);
-    card.appendChild(head);
+    head.appendChild(index);
+    head.appendChild(date);
+    head.appendChild(count);
+    grid.appendChild(head);
+  });
 
-    MEALS.forEach((meal) => {
-      const row = document.createElement('div');
-      row.className = 'meal-row';
+  // 끼니마다 한 줄 : 왼쪽에 이름, 오른쪽으로 일차별 빈칸
+  MEALS.forEach((meal) => {
+    const label = document.createElement('div');
+    label.className = 'mg-label' + (meal.main ? ' main' : '');
+    label.textContent = meal.label;
+    grid.appendChild(label);
 
-      const inputId = `meal-${iso}-${meal.key}`;
-
-      const label = document.createElement('label');
-      label.className = 'meal-label' + (meal.main ? ' main' : '');
-      label.textContent = meal.label;
-      label.setAttribute('for', inputId);
+    isoList.forEach((iso) => {
+      const day = trip.meals[iso];
 
       const input = document.createElement('input');
       input.type = 'text';
-      input.id = inputId;
       input.className = 'meal-input'
         + (meal.main ? ' main' : '')
         + ((day[meal.key] || '').trim() ? ' filled' : '');
@@ -753,23 +772,23 @@ function buildMeals(trip, body) {
       input.value = day[meal.key] || '';
       input.maxLength = 80;
       input.autocomplete = 'off';
+      // 이름표가 줄 맨 왼쪽에 하나뿐이라, 칸마다 무슨 칸인지 따로 일러 둡니다.
+      input.setAttribute('aria-label', `${shortDate(iso)} ${meal.label}`);
 
       input.addEventListener('input', () => {
         day[meal.key] = input.value;
         input.classList.toggle('filled', !!input.value.trim());
-        filled.textContent = `${mealFilledCount(trip, iso)}/${MEALS.length}`;
+        counters[iso].textContent = `${mealFilledCount(trip, iso)}/${MEALS.length}`;
         refreshSubTabCounts(trip);
         queueSave();
       });
       input.addEventListener('blur', saveNow);
 
-      row.appendChild(label);
-      row.appendChild(input);
-      card.appendChild(row);
+      grid.appendChild(input);
     });
-
-    body.appendChild(card);
   });
+
+  return grid;
 }
 
 // 타자 한 글자마다 저장하지 않도록 잠깐 모았다가 씁니다.

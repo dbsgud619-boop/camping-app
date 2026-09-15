@@ -515,78 +515,89 @@ body {
 }
 .gear-promote:active { background: rgba(227, 154, 60, 0.18); }
 
-/* ---- 식단 ---- */
-.day-card {
+/* ---- 식단 ----
+   일차는 가로 세 칸, 끼니 이름은 맨 왼쪽 한 줄에만. */
+.meal-grid {
+  display: grid;
+  grid-template-columns: 38px repeat(var(--cols, 3), minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 12px 10px;
   margin-bottom: 12px;
 }
 
-.day-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding-bottom: 10px;
+.mg-corner,
+.mg-day {
+  padding-bottom: 9px;
   border-bottom: 1px solid var(--border);
+  align-self: stretch;
 }
 
-.day-index {
-  font-weight: 800;
-  font-size: 0.98rem;
-  color: var(--ember);
-}
-
-.day-date {
-  font-size: 0.84rem;
-  color: var(--text-dim);
-  font-weight: 600;
-}
-
-.day-filled {
-  margin-left: auto;
-  font-size: 0.76rem;
-  color: var(--text-dim);
-}
-
-.meal-row {
+.mg-day {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  justify-content: flex-end;
+  gap: 1px;
+  text-align: center;
 }
-.meal-row:last-child { margin-bottom: 0; }
+
+.mg-day-index {
+  font-weight: 800;
+  font-size: 0.8rem;
+  color: var(--ember);
+  white-space: nowrap;
+}
+
+.mg-day-date {
+  font-size: 0.67rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.mg-day-count {
+  font-size: 0.63rem;
+  color: var(--text-dim);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
 
 /* 곁들이는 끼니 (아점·점저·야간) */
-.meal-label {
-  flex: 0 0 42px;
-  font-size: 0.83rem;
+.mg-label {
+  font-size: 0.76rem;
   font-weight: 600;
   color: var(--text-dim);
+  text-align: right;
+  line-height: 1.2;
 }
 
 /* 주 끼니 (아침·점심·저녁) */
-.meal-label.main {
+.mg-label.main {
   font-weight: 800;
-  font-size: 0.88rem;
+  font-size: 0.81rem;
   color: var(--text);
 }
 
 .meal-input {
-  flex: 1;
   min-width: 0;
+  width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
   border-left: 3px solid var(--border);
   border-radius: 9px;
   color: var(--text);
-  padding: 10px 11px;
-  font-size: 0.9rem;
+  padding: 9px 6px;
+  font-size: 0.82rem;
   font-family: inherit;
+  text-align: center;
 }
-.meal-input::placeholder { color: #55665c; }
+.meal-input::placeholder {
+  color: #55665c;
+  font-size: 0.74rem;
+}
 
 /* 주 끼니 칸은 테두리와 글씨를 한 단계 굵게.
    아래 :focus / .filled 규칙이 뒤에 와서 그때는 그쪽 색이 이깁니다. */
