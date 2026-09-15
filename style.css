@@ -4,7 +4,10 @@
   --surface-2: #22362a;
   --border: #2f4738;
   --border-strong: #436049;
-  --shade: #2b332e;
+  --shade: #161b18;
+  --shade-line: rgba(255, 255, 255, 0.05);
+  --shade-edge: #212823;
+  --shade-text: #55625a;
   --text: #e6efe8;
   --text-dim: #93a89a;
   --primary: #4caf6e;
@@ -617,15 +620,25 @@ body {
   background: var(--surface-2);
 }
 
-/* '-' 만 적은 칸 = 그 끼니는 건너뜀. 회색으로 눕혀 둡니다.
+/* '-' 만 적은 칸 = 그 끼니는 건너뜀.
+   빗금을 깔아 '여긴 안 쓴다'가 한눈에 보이게 합니다.
    .filled 보다 뒤에 있어야 주황 표시를 덮어씁니다. */
 .meal-input.dash {
-  background: var(--shade);
-  border-color: var(--border);
-  border-left-color: var(--border);
-  color: var(--text-dim);
+  background-color: var(--shade);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--shade-line) 0 4px,
+    transparent 4px 9px
+  );
+  border-color: var(--shade-edge);
+  border-left-color: var(--shade-edge);
+  color: var(--shade-text);
   font-weight: 400;
-  opacity: 0.7;
+}
+.meal-input.dash::placeholder { color: var(--shade-text); }
+.meal-input.dash:focus {
+  border-color: var(--ember);
+  background-image: none;
 }
 
 /* ---- 빈 화면 ---- */

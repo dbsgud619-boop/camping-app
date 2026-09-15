@@ -27,11 +27,13 @@ function stateLabel(state) {
 // ---- 하루에 기입할 수 있는 끼니 ----
 // hint : 빈 칸에 흐리게 보이는 안내 문구
 // main : 아침·점심·저녁은 주 끼니라 굵게, 나머지는 곁들이는 끼니라 흐리게
+// preset : 보통 안 먹는 끼니라 '-' 를 미리 적어 둡니다.
+//          한 번만 넣어 주므로, 지우면 지운 대로 남습니다.
 const MEALS = [
   { key: 'morning', label: '아침', hint: '', main: true },
-  { key: 'brunch', label: '아점', hint: '-', main: false },
+  { key: 'brunch', label: '아점', hint: '-', main: false, preset: '-' },
   { key: 'lunch', label: '점심', hint: '', main: true },
-  { key: 'linner', label: '점저', hint: '-', main: false },
+  { key: 'linner', label: '점저', hint: '-', main: false, preset: '-' },
   { key: 'dinner', label: '저녁', hint: '', main: true },
   { key: 'night', label: '야간', hint: '-', main: false },
 ];
@@ -39,6 +41,26 @@ const MEALS = [
 /** '-' 만 적힌 칸은 그 끼니를 건너뛴다는 뜻이라 회색으로 눕혀 둡니다. */
 function isNoMeal(value) {
   return /^[-–—]+$/.test(String(value ?? '').trim());
+}
+
+/**
+ * 아직 손대지 않은 칸에만 기본값을 넣습니다.
+ * 값이 한 번이라도 들어간 칸(비운 칸 포함)은 건드리지 않습니다.
+ * @returns {boolean} 뭔가 새로 넣었으면 true
+ */
+function seedTripMeals(trip) {
+  let changed = false;
+  datesOf(trip).forEach((iso) => {
+    if (!trip.meals[iso]) trip.meals[iso] = {};
+    const day = trip.meals[iso];
+    MEALS.forEach((meal) => {
+      if (meal.preset !== undefined && day[meal.key] === undefined) {
+        day[meal.key] = meal.preset;
+        changed = true;
+      }
+    });
+  });
+  return changed;
 }
 
 // ---- state ----
@@ -248,6 +270,9 @@ function renderPanel() {
     return;
   }
   empty.classList.add('hidden');
+
+  // 탭 숫자가 처음부터 맞게 나오도록, 그리기 전에 기본값을 채웁니다.
+  if (seedTripMeals(trip)) saveTrips();
 
   panel.appendChild(buildTripHead(trip));
   panel.appendChild(buildSubTabs(trip));
