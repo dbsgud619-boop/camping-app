@@ -4,6 +4,7 @@
   --surface-2: #22362a;
   --border: #2f4738;
   --border-strong: #436049;
+  --shade: #2b332e;
   --text: #e6efe8;
   --text-dim: #93a89a;
   --primary: #4caf6e;
@@ -614,6 +615,17 @@ body {
 .meal-input.filled {
   border-left-color: var(--ember);
   background: var(--surface-2);
+}
+
+/* '-' 만 적은 칸 = 그 끼니는 건너뜀. 회색으로 눕혀 둡니다.
+   .filled 보다 뒤에 있어야 주황 표시를 덮어씁니다. */
+.meal-input.dash {
+  background: var(--shade);
+  border-color: var(--border);
+  border-left-color: var(--border);
+  color: var(--text-dim);
+  font-weight: 400;
+  opacity: 0.7;
 }
 
 /* ---- 빈 화면 ---- */

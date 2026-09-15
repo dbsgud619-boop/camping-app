@@ -29,12 +29,17 @@ function stateLabel(state) {
 // main : 아침·점심·저녁은 주 끼니라 굵게, 나머지는 곁들이는 끼니라 흐리게
 const MEALS = [
   { key: 'morning', label: '아침', hint: '', main: true },
-  { key: 'brunch', label: '아점', hint: '보조 식사', main: false },
+  { key: 'brunch', label: '아점', hint: '-', main: false },
   { key: 'lunch', label: '점심', hint: '', main: true },
-  { key: 'linner', label: '점저', hint: '보조 식사', main: false },
+  { key: 'linner', label: '점저', hint: '-', main: false },
   { key: 'dinner', label: '저녁', hint: '', main: true },
-  { key: 'night', label: '야간', hint: '보조 식사', main: false },
+  { key: 'night', label: '야간', hint: '-', main: false },
 ];
+
+/** '-' 만 적힌 칸은 그 끼니를 건너뛴다는 뜻이라 회색으로 눕혀 둡니다. */
+function isNoMeal(value) {
+  return /^[-–—]+$/.test(String(value ?? '').trim());
+}
 
 // ---- state ----
 // 준비물은 두 갈래입니다.
@@ -767,7 +772,8 @@ function buildMealGrid(trip, isoList, offset) {
       input.type = 'text';
       input.className = 'meal-input'
         + (meal.main ? ' main' : '')
-        + ((day[meal.key] || '').trim() ? ' filled' : '');
+        + ((day[meal.key] || '').trim() ? ' filled' : '')
+        + (isNoMeal(day[meal.key]) ? ' dash' : '');
       input.placeholder = meal.hint;
       input.value = day[meal.key] || '';
       input.maxLength = 80;
@@ -778,6 +784,7 @@ function buildMealGrid(trip, isoList, offset) {
       input.addEventListener('input', () => {
         day[meal.key] = input.value;
         input.classList.toggle('filled', !!input.value.trim());
+        input.classList.toggle('dash', isNoMeal(input.value));
         counters[iso].textContent = `${mealFilledCount(trip, iso)}/${MEALS.length}`;
         refreshSubTabCounts(trip);
         queueSave();
