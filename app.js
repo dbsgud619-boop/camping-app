@@ -927,7 +927,20 @@ if (trips.length === 0) toggleNewTripForm(true);
 renderAll();
 
 if ('serviceWorker' in navigator) {
+  // 앱을 켤 때 이미 예전 버전이 돌고 있었는지 기억해 둡니다.
+  const hadOldVersion = !!navigator.serviceWorker.controller;
+  let reloading = false;
+
+  // 새 버전이 자리를 넘겨받으면 한 번만 새로고침해서 바로 반영합니다.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadOldVersion || reloading) return;
+    reloading = true;
+    window.location.reload();
+  });
+
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    navigator.serviceWorker.register('service-worker.js')
+      .then((reg) => reg.update().catch(() => {}))
+      .catch(() => {});
   });
 }
