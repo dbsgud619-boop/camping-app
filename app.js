@@ -110,7 +110,18 @@ function loadTrips() {
   }
 }
 function saveTrips() {
+  // 지금 보고 있는 일정에 '언제 고쳤는지'를 남깁니다.
+  // 같은 칸을 두 사람이 동시에 고쳤을 때 누구 것을 남길지 정하는 데 씁니다.
+  const active = trips.find((t) => t.id === activeTripId);
+  if (active) active.updatedAt = Date.now();
+
   localStorage.setItem(LS_TRIPS, JSON.stringify(trips));
+  pushToRoom();
+}
+
+/** 방에 들어가 있으면 바뀐 내용을 곧 올려 보냅니다. */
+function pushToRoom() {
+  if (window.CampSync) window.CampSync.schedulePush();
 }
 function loadMenuItems() {
   try {
@@ -123,6 +134,7 @@ function loadMenuItems() {
 }
 function saveMenuItems() {
   localStorage.setItem(LS_MENU, JSON.stringify(menuItems));
+  pushToRoom();
 }
 
 function loadSharedGear() {
@@ -136,6 +148,7 @@ function loadSharedGear() {
 }
 function saveSharedGear() {
   localStorage.setItem(LS_SHARED_GEAR, JSON.stringify(sharedGear));
+  pushToRoom();
 }
 function setAddScope(scope) {
   addScope = scope;
@@ -1121,6 +1134,133 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') saveNow();
 });
 
+/* ===========================================================
+   함께 쓰기 다리 (sync.js 가 이 창구로 드나듭니다)
+   =========================================================== */
+window.CampApp = {
+  getState() {
+    return {
+      trips: JSON.parse(JSON.stringify(trips)),
+      sharedGear: JSON.parse(JSON.stringify(sharedGear)),
+      menuItems: JSON.parse(JSON.stringify(menuItems)),
+    };
+  },
+
+  /** 합쳐진 기록을 이 폰에 들여놓습니다. (다시 올려 보내지는 않습니다) */
+  applyState(state, options) {
+    if (!state) return;
+    trips = Array.isArray(state.trips) ? state.trips.map(normalizeTrip) : [];
+    sharedGear = Array.isArray(state.sharedGear) ? state.sharedGear : [];
+    menuItems = Array.isArray(state.menuItems) ? state.menuItems : [];
+
+    localStorage.setItem(LS_TRIPS, JSON.stringify(trips));
+    localStorage.setItem(LS_SHARED_GEAR, JSON.stringify(sharedGear));
+    localStorage.setItem(LS_MENU, JSON.stringify(menuItems));
+
+    if (trips.length && !getActiveTrip()) setActiveTrip(trips[0].id);
+    if (!trips.length) setActiveTrip(null);
+
+    if (!options || options.rerender !== false) renderAll();
+  },
+
+  toast: showToast,
+};
+
+/* ---- 함께 쓰기 막대 ---- */
+function renderSyncBar(state) {
+  const bar = document.getElementById('syncBar');
+  if (!bar) return;
+
+  const sync = window.CampSync;
+  if (!sync || !sync.isConfigured()) {
+    bar.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  bar.innerHTML = '';
+
+  const info = state || sync.status();
+  const text = document.createElement('span');
+  text.className = 'sync-text';
+
+  const actions = document.createElement('div');
+  actions.className = 'sync-actions';
+
+  const makeBtn = (label, onClick, cls) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sync-btn' + (cls ? ' ' + cls : '');
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  };
+
+  if (info.state === 'off') {
+    bar.classList.remove('on');
+    text.textContent = '이 폰에만 저장 중';
+    actions.appendChild(makeBtn('함께 쓰기', openRoomDialog, 'primary'));
+  } else {
+    bar.classList.add('on');
+    text.textContent = info.state === 'syncing'
+      ? '맞추는 중…'
+      : `함께 쓰는 중 · ${syncedAgo(info.syncedAt)}`;
+    actions.appendChild(makeBtn('방 코드', showRoomCode));
+    actions.appendChild(makeBtn('나가기', leaveRoomAsked));
+  }
+
+  bar.appendChild(text);
+  bar.appendChild(actions);
+}
+
+function syncedAgo(ts) {
+  if (!ts) return '맞추는 중';
+  const sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60) return '방금 맞춤';
+  if (sec < 3600) return `${Math.floor(sec / 60)}분 전 맞춤`;
+  return `${Math.floor(sec / 3600)}시간 전 맞춤`;
+}
+
+function openRoomDialog() {
+  const makeNew = window.confirm(
+    '같이 쓸 방을 엽니다.\n\n'
+    + '[확인] 새 방 만들기 — 지금 이 폰의 기록을 그대로 올립니다\n'
+    + '[취소] 받은 방 코드 넣기 — 내 기록과 방 기록을 모두 합칩니다'
+  );
+
+  if (makeNew) {
+    window.CampSync.createRoom()
+      .then((code) => {
+        renderSyncBar();
+        window.prompt('방이 열렸어요. 이 코드를 같이 갈 사람에게 보내세요.', code);
+      })
+      .catch((err) => showToast('방을 열지 못했어요: ' + err.message));
+    return;
+  }
+
+  const code = window.prompt('받은 방 코드를 넣어주세요');
+  if (code === null) return;
+
+  window.CampSync.joinRoom(code)
+    .then(() => {
+      renderSyncBar();
+      showToast('방에 들어왔어요. 기록을 합쳤습니다');
+    })
+    .catch((err) => showToast(err.message));
+}
+
+function showRoomCode() {
+  const info = window.CampSync.status();
+  if (!info.code) return;
+  window.prompt('같이 갈 사람에게 이 코드를 보내세요.', info.code);
+}
+
+function leaveRoomAsked() {
+  if (!window.confirm('이 폰을 방에서 빼낼까요?\n\n지금까지의 기록은 이 폰에 그대로 남습니다.')) return;
+  window.CampSync.leaveRoom();
+  renderSyncBar();
+  showToast('방에서 나왔어요');
+}
+
 // ---- init ----
 const today = todayISO();
 startInput.value = today;
@@ -1131,6 +1271,12 @@ if (trips.length && !getActiveTrip()) setActiveTrip(trips[0].id);
 if (trips.length === 0) toggleNewTripForm(true);
 
 renderAll();
+
+// 함께 쓰기 막대는 sync.js 가 준비된 뒤에 그립니다.
+window.addEventListener('load', () => {
+  renderSyncBar();
+  if (window.CampSync) window.CampSync.onChange(renderSyncBar);
+});
 
 if ('serviceWorker' in navigator) {
   // 앱을 켤 때 이미 예전 버전이 돌고 있었는지 기억해 둡니다.

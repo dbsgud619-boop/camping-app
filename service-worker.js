@@ -1,9 +1,11 @@
-const CACHE_NAME = 'camping-app-v13';
+const CACHE_NAME = 'camping-app-v14';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './sync.js',
+  './supabase-config.js',
   './manifest.json',
   './icon.svg',
 ];
