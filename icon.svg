@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <rect width="192" height="192" rx="40" fill="#101a14"/>
+
+  <!-- 달 -->
+  <circle cx="141" cy="52" r="13" fill="#e39a3c" opacity="0.9"/>
+
+  <!-- 텐트 -->
+  <path d="M96 48 L156 146 H36 Z" fill="#4caf6e"/>
+  <path d="M96 48 L156 146 H96 Z" fill="#3d9a5d"/>
+
+  <!-- 입구 -->
+  <path d="M96 84 L124 146 H68 Z" fill="#101a14"/>
+  <path d="M96 84 L110 146 H96 Z" fill="#17241c"/>
+
+  <!-- 바닥 -->
+  <rect x="28" y="146" width="136" height="9" rx="4.5" fill="#2f4738"/>
+</svg>

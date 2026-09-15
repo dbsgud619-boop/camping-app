@@ -1,0 +1,26 @@
+{
+  "name": "캠핑 준비",
+  "short_name": "캠핑",
+  "description": "캠핑 일정별 준비물 체크와 끼니별 식단 계획",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#101a14",
+  "theme_color": "#4caf6e",
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
