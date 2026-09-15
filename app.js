@@ -4,6 +4,7 @@ const LS_ACTIVE_TRIP = 'campingApp.activeTrip.v1';
 const LS_SUB_TAB = 'campingApp.subTab.v1';
 const LS_SHARED_GEAR = 'campingApp.sharedGear.v1';
 const LS_ADD_SCOPE = 'campingApp.addScope.v1';
+const LS_MENU = 'campingApp.menuItems.v1';
 
 const DAY_MS = 86400000;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -70,6 +71,7 @@ function seedTripMeals(trip) {
 //   trip.checks : 공용 항목을 이 일정에서 챙겼는지 (체크는 일정별로 따로)
 let trips = loadTrips();
 let sharedGear = loadSharedGear();
+let menuItems = loadMenuItems(); // 끌어다 쓰는 메뉴 꾸러미 (모든 일정 공통)
 let activeTripId = localStorage.getItem(LS_ACTIVE_TRIP) || (trips[0] ? trips[0].id : null);
 let activeSubTab = localStorage.getItem(LS_SUB_TAB) || 'gear';
 let addScope = localStorage.getItem(LS_ADD_SCOPE) === 'trip' ? 'trip' : 'shared';
@@ -110,6 +112,19 @@ function loadTrips() {
 function saveTrips() {
   localStorage.setItem(LS_TRIPS, JSON.stringify(trips));
 }
+function loadMenuItems() {
+  try {
+    const raw = localStorage.getItem(LS_MENU);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+function saveMenuItems() {
+  localStorage.setItem(LS_MENU, JSON.stringify(menuItems));
+}
+
 function loadSharedGear() {
   try {
     const raw = localStorage.getItem(LS_SHARED_GEAR);
@@ -739,11 +754,177 @@ function refreshSubTabCounts(trip) {
 const DAYS_PER_GRID = 3;
 
 function buildMeals(trip, body) {
+  body.appendChild(buildMenuPalette());
+
   const dates = datesOf(trip);
   for (let from = 0; from < dates.length; from += DAYS_PER_GRID) {
     const group = dates.slice(from, from + DAYS_PER_GRID);
     body.appendChild(buildMealGrid(trip, group, from));
   }
+
+  renderMenuChips();
+}
+
+// ---- 메뉴 꾸러미 : 적어 두고 칸으로 끌어다 놓습니다 ----
+function buildMenuPalette() {
+  const wrap = document.createElement('section');
+  wrap.className = 'menu-palette';
+
+  const form = document.createElement('form');
+  form.className = 'menu-add';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '자주 먹는 메뉴 (예: 김치찌개)';
+  input.maxLength = 20;
+  input.autocomplete = 'off';
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'submit';
+  addBtn.className = 'btn btn-primary small';
+  addBtn.textContent = '추가';
+
+  form.appendChild(input);
+  form.appendChild(addBtn);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+
+    const norm = (s) => s.replace(/\s+/g, ' ').trim();
+    if (menuItems.some((m) => norm(m.text) === norm(text))) {
+      showToast(`'${text}'은(는) 이미 있어요`);
+      return;
+    }
+
+    menuItems.push({ id: newId(), text });
+    saveMenuItems();
+    input.value = '';
+    input.focus();
+    renderMenuChips();
+  });
+
+  const chips = document.createElement('div');
+  chips.className = 'menu-chips';
+  chips.id = 'menuChips';
+
+  const hint = document.createElement('p');
+  hint.className = 'menu-hint';
+  hint.textContent = '메뉴를 눌러 아래 표의 칸으로 끌어다 놓으세요';
+
+  wrap.appendChild(form);
+  wrap.appendChild(chips);
+  wrap.appendChild(hint);
+  return wrap;
+}
+
+function renderMenuChips() {
+  const box = document.getElementById('menuChips');
+  if (!box) return;
+  box.innerHTML = '';
+
+  if (menuItems.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'menu-empty';
+    empty.textContent = '메뉴를 적어 두면 끌어다 쓸 수 있어요.';
+    box.appendChild(empty);
+    return;
+  }
+
+  menuItems.forEach((item) => {
+    const chip = document.createElement('div');
+    chip.className = 'menu-chip';
+
+    const label = document.createElement('span');
+    label.className = 'menu-chip-text';
+    label.textContent = item.text;
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'menu-del';
+    del.textContent = '✕';
+    del.setAttribute('aria-label', `메뉴 ${item.text} 지우기`);
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menuItems = menuItems.filter((m) => m.id !== item.id);
+      saveMenuItems();
+      renderMenuChips();
+    });
+
+    chip.appendChild(label);
+    chip.appendChild(del);
+    attachChipDrag(chip, item.text);
+    box.appendChild(chip);
+  });
+}
+
+/** 칸에 메뉴를 넣습니다. 적어 넣은 것과 똑같이 처리되도록 input 을 흘려보냅니다. */
+function dropMenuInto(cell, text) {
+  cell.value = text;
+  cell.dispatchEvent(new Event('input'));
+}
+
+/**
+ * 손가락으로 끌 수 있게 합니다.
+ * HTML 기본 끌어놓기는 폰에서 동작하지 않아 포인터를 직접 따라갑니다.
+ */
+function attachChipDrag(chip, text) {
+  chip.addEventListener('pointerdown', (event) => {
+    if (event.button) return;                       // 왼쪽 버튼(과 터치)만
+    if (event.target.closest('.menu-del')) return;  // 삭제 버튼은 빼고
+    event.preventDefault();
+
+    const ghost = document.createElement('div');
+    ghost.className = 'menu-ghost';
+    ghost.textContent = text;
+    document.body.appendChild(ghost);
+
+    let target = null;
+
+    const follow = (x, y) => {
+      ghost.style.left = `${x}px`;
+      ghost.style.top = `${y}px`;
+
+      // 유령 칸은 pointer-events 가 없어서 아래 칸이 잡힙니다.
+      const under = document.elementFromPoint(x, y);
+      const cell = under && under.closest ? under.closest('.meal-input') : null;
+      if (cell === target) return;
+      if (target) target.classList.remove('drop-target');
+      target = cell;
+      if (target) target.classList.add('drop-target');
+    };
+
+    const onMove = (e) => follow(e.clientX, e.clientY);
+
+    const finish = () => {
+      chip.removeEventListener('pointermove', onMove);
+      chip.removeEventListener('pointerup', onUp);
+      chip.removeEventListener('pointercancel', onCancel);
+      chip.classList.remove('dragging');
+      ghost.remove();
+    };
+
+    const onUp = () => {
+      if (target) {
+        target.classList.remove('drop-target');
+        dropMenuInto(target, text);
+      }
+      finish();
+    };
+
+    const onCancel = () => {
+      if (target) target.classList.remove('drop-target');
+      finish();
+    };
+
+    chip.classList.add('dragging');
+    chip.addEventListener('pointermove', onMove);
+    chip.addEventListener('pointerup', onUp);
+    chip.addEventListener('pointercancel', onCancel);
+    if (chip.setPointerCapture) chip.setPointerCapture(event.pointerId);
+
+    follow(event.clientX, event.clientY);
+  });
 }
 
 function buildMealGrid(trip, isoList, offset) {
