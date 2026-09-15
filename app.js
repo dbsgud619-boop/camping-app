@@ -8,6 +8,22 @@ const LS_ADD_SCOPE = 'campingApp.addScope.v1';
 const DAY_MS = 86400000;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
+// ---- 준비물 한 줄의 세 가지 상태 ----
+// 없음 → 체크(챙김) → 건너뜀(이번엔 안 챙김) → 없음 …
+const ST_DONE = 'done';
+const ST_SKIP = 'skip';
+
+function nextState(state) {
+  if (state === ST_DONE) return ST_SKIP;
+  if (state === ST_SKIP) return null;
+  return ST_DONE;
+}
+function stateLabel(state) {
+  if (state === ST_DONE) return '챙김';
+  if (state === ST_SKIP) return '이번엔 안 챙김';
+  return '아직';
+}
+
 // ---- 하루에 기입할 수 있는 끼니 ----
 // hint : 빈 칸에 흐리게 보이는 안내 문구
 // main : 아침·점심·저녁은 주 끼니라 굵게, 나머지는 곁들이는 끼니라 흐리게
@@ -31,11 +47,27 @@ let activeTripId = localStorage.getItem(LS_ACTIVE_TRIP) || (trips[0] ? trips[0].
 let activeSubTab = localStorage.getItem(LS_SUB_TAB) || 'gear';
 let addScope = localStorage.getItem(LS_ADD_SCOPE) === 'trip' ? 'trip' : 'shared';
 
-/** 예전 버전에서 저장된 일정에도 빠진 칸을 채워 둡니다. */
+/**
+ * 예전 버전에서 저장된 일정에도 빠진 칸을 채워 둡니다.
+ * 체크가 true/false 였던 시절의 기록은 'done' 으로 옮깁니다.
+ */
 function normalizeTrip(trip) {
   if (!Array.isArray(trip.gear)) trip.gear = [];
   if (!trip.checks || typeof trip.checks !== 'object') trip.checks = {};
   if (!trip.meals || typeof trip.meals !== 'object') trip.meals = {};
+
+  trip.gear = trip.gear.map((item) => {
+    if (item.state === ST_DONE || item.state === ST_SKIP) return item;
+    const state = item.done === true ? ST_DONE : null;
+    return { id: item.id, text: item.text, state };
+  });
+
+  Object.keys(trip.checks).forEach((id) => {
+    const value = trip.checks[id];
+    if (value === true) trip.checks[id] = ST_DONE;
+    else if (value !== ST_DONE && value !== ST_SKIP) delete trip.checks[id];
+  });
+
   return trip;
 }
 
@@ -123,12 +155,26 @@ function rangeLabel(trip) {
 function getActiveTrip() {
   return trips.find((t) => t.id === activeTripId) || null;
 }
-function gearTotalCount(trip) {
-  return sharedGear.length + trip.gear.length;
-}
-function gearDoneCount(trip) {
-  const sharedDone = sharedGear.filter((g) => trip.checks[g.id]).length;
-  return sharedDone + trip.gear.filter((g) => g.done).length;
+/**
+ * 준비물 집계.
+ *   total  : 목록에 있는 전부
+ *   skip   : 이번엔 안 챙기기로 한 것
+ *   target : 이번에 실제로 챙겨야 하는 수 (total - skip)
+ */
+function gearCounts(trip) {
+  let done = 0;
+  let skip = 0;
+
+  const tally = (state) => {
+    if (state === ST_DONE) done += 1;
+    else if (state === ST_SKIP) skip += 1;
+  };
+
+  sharedGear.forEach((g) => tally(trip.checks[g.id]));
+  trip.gear.forEach((g) => tally(g.state));
+
+  const total = sharedGear.length + trip.gear.length;
+  return { done, skip, total, target: total - skip };
 }
 /** 같은 이름이 공용에도 이번 일정에도 없을 때만 true */
 function isNewGearText(trip, text) {
@@ -261,8 +307,9 @@ function buildSubTabs(trip) {
   const wrap = document.createElement('nav');
   wrap.className = 'sub-tabs';
 
+  const counts = gearCounts(trip);
   const tabs = [
-    { key: 'gear', label: '준비물', count: `${gearDoneCount(trip)}/${gearTotalCount(trip)}` },
+    { key: 'gear', label: '준비물', count: `${counts.done}/${counts.target}` },
     { key: 'meals', label: '식단', count: `${mealTotalFilled(trip)}칸` },
   ];
 
@@ -343,8 +390,13 @@ function buildGear(trip, body) {
     chips.appendChild(chip);
   });
 
+  const hint = document.createElement('p');
+  hint.className = 'gear-hint';
+  hint.textContent = '줄을 누를 때마다 : 챙김 ✓ → 이번엔 안 챙김 ▲ → 해제';
+
   form.appendChild(row);
   form.appendChild(chips);
+  form.appendChild(hint);
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -360,7 +412,7 @@ function buildGear(trip, body) {
       sharedGear.push({ id: newId(), text });
       saveSharedGear();
     } else {
-      trip.gear.push({ id: newId(), text, done: false });
+      trip.gear.push({ id: newId(), text, state: null });
       saveTrips();
     }
 
@@ -389,38 +441,57 @@ function renderGearProgress(trip) {
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  const total = gearTotalCount(trip);
+  const { done, skip, total, target } = gearCounts(trip);
   if (total === 0) {
     wrap.classList.add('hidden');
     return;
   }
   wrap.classList.remove('hidden');
 
-  const done = gearDoneCount(trip);
   const bar = document.createElement('div');
   bar.className = 'gear-bar';
 
   const fill = document.createElement('div');
   fill.className = 'gear-bar-fill';
-  fill.style.width = `${Math.round((done / total) * 100)}%`;
+  fill.style.width = target > 0 ? `${Math.round((done / target) * 100)}%` : '100%';
   bar.appendChild(fill);
 
   const text = document.createElement('span');
   text.className = 'gear-progress-text';
-  text.textContent = done === total ? '전부 챙겼어요 ✓' : `${done} / ${total} 챙김`;
+
+  let label;
+  if (target === 0) label = '이번엔 챙길 게 없어요';
+  else if (done === target) label = '전부 챙겼어요 ✓';
+  else label = `${done} / ${target} 챙김`;
+  text.textContent = label;
 
   wrap.appendChild(bar);
   wrap.appendChild(text);
+
+  // 건너뛴 항목이 있으면 몇 개인지 같이 알려 줍니다.
+  if (skip > 0) {
+    const skipped = document.createElement('span');
+    skipped.className = 'gear-skip-note';
+    skipped.textContent = `▲ ${skip}`;
+    skipped.setAttribute('aria-label', `이번엔 안 챙기는 항목 ${skip}개`);
+    wrap.appendChild(skipped);
+  }
 }
 
-/** 준비물 한 줄. 체크는 줄 전체, 나머지 버튼은 각자 동작합니다. */
+/** 준비물 한 줄. 줄을 누르면 상태가 돌고, 나머지 버튼은 각자 동작합니다. */
 function buildGearRow(item, options) {
+  const state = options.state || null;
+
   const li = document.createElement('li');
-  li.className = 'gear-item' + (options.done ? ' done' : '');
+  li.className = 'gear-item'
+    + (state === ST_DONE ? ' done' : '')
+    + (state === ST_SKIP ? ' skip' : '');
+  li.setAttribute('aria-label', `${item.text} — ${stateLabel(state)}`);
 
   const check = document.createElement('span');
   check.className = 'gear-check';
-  check.textContent = '✓';
+  check.textContent = state === ST_SKIP ? '▲' : '✓';
+  check.setAttribute('aria-hidden', 'true');
 
   const text = document.createElement('span');
   text.className = 'gear-text';
@@ -517,10 +588,11 @@ function renderGearLists(trip) {
   // 공용 준비물
   const sharedRows = sharedGear.map((item) =>
     buildGearRow(item, {
-      done: !!trip.checks[item.id],
+      state: trip.checks[item.id] || null,
       onToggle: () => {
-        if (trip.checks[item.id]) delete trip.checks[item.id];
-        else trip.checks[item.id] = true;
+        const next = nextState(trip.checks[item.id] || null);
+        if (next) trip.checks[item.id] = next;
+        else delete trip.checks[item.id];
         saveTrips();
         refreshGear(trip);
       },
@@ -542,9 +614,9 @@ function renderGearLists(trip) {
   if (trip.gear.length > 0) {
     const tripRows = trip.gear.map((item) =>
       buildGearRow(item, {
-        done: item.done,
+        state: item.state || null,
         onToggle: () => {
-          item.done = !item.done;
+          item.state = nextState(item.state || null);
           saveTrips();
           refreshGear(trip);
         },
@@ -608,7 +680,7 @@ function deleteSharedGear(trip, item) {
 function promoteToShared(trip, item) {
   trip.gear = trip.gear.filter((g) => g.id !== item.id);
   sharedGear.push({ id: item.id, text: item.text });
-  if (item.done) trip.checks[item.id] = true;
+  if (item.state) trip.checks[item.id] = item.state;
 
   saveSharedGear();
   saveTrips();
@@ -626,7 +698,8 @@ function refreshGear(trip) {
 function refreshSubTabCounts(trip) {
   const counts = document.querySelectorAll('.sub-tab-count');
   if (counts.length < 2) return;
-  counts[0].textContent = `${gearDoneCount(trip)}/${gearTotalCount(trip)}`;
+  const { done, target } = gearCounts(trip);
+  counts[0].textContent = `${done}/${target}`;
   counts[1].textContent = `${mealTotalFilled(trip)}칸`;
 }
 
