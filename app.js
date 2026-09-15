@@ -9,13 +9,15 @@ const DAY_MS = 86400000;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 // ---- 하루에 기입할 수 있는 끼니 ----
+// hint 는 빈 칸에 흐리게 보이는 안내 문구입니다.
+// 아점·점저·야간은 챙겨 먹을 때만 적는 끼니라 '추가'로 표시합니다.
 const MEALS = [
-  { key: 'morning', label: '아침', hint: '예: 토스트, 커피' },
-  { key: 'brunch', label: '아점', hint: '예: 라면' },
-  { key: 'lunch', label: '점심', hint: '예: 삼겹살' },
-  { key: 'linner', label: '점저', hint: '예: 과자, 맥주' },
-  { key: 'dinner', label: '저녁', hint: '예: 목살 + 쌈' },
-  { key: 'night', label: '야간', hint: '예: 마시멜로' },
+  { key: 'morning', label: '아침', hint: '' },
+  { key: 'brunch', label: '아점', hint: '추가' },
+  { key: 'lunch', label: '점심', hint: '' },
+  { key: 'linner', label: '점저', hint: '추가' },
+  { key: 'dinner', label: '저녁', hint: '' },
+  { key: 'night', label: '야간', hint: '추가' },
 ];
 
 // ---- state ----
