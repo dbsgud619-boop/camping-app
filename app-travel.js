@@ -1782,6 +1782,27 @@ function buildRouteMapDialog(trip) {
   return card;
 }
 
+/**
+ * 배경 동기화(60초 주기)가 끝나면 서버와 합쳐진 값을 통째로 travel 에 덮어썼는데,
+ * 그러면 지금 '수정' 모드로 열어 둔 행이 들고 있던 item 객체가 새 배열 안에는
+ * 없는 채로 남아(참조가 끊겨) 그 뒤로 입력하는 내용이 조용히 사라졌습니다.
+ * (여러 항목을 한 번에 고칠수록 편집 시간이 길어져 60초 주기와 겹칠 확률이
+ * 커지므로 "여러 개를 한 번에 고치면 적용이 안 된다"로 보였던 원인입니다)
+ * id 가 같은 항목은 기존 객체를 그대로 두고 값만 옮겨 담아, 화면에 열려
+ * 있는 행이 계속 같은 객체를 가리키게 합니다.
+ */
+function reconcileArrayById(current, incoming) {
+  const byId = new Map(current.map((row) => [row.id, row]));
+  return incoming.map((row) => {
+    const existing = byId.get(row.id);
+    if (existing) {
+      Object.assign(existing, row);
+      return existing;
+    }
+    return row;
+  });
+}
+
 /* ===========================================================
    함께 쓰기 다리 (sync.js 가 이 창구로 드나듭니다)
    =========================================================== */
@@ -1791,7 +1812,15 @@ window.CampApp = {
   },
   applyState(state, options) {
     if (!state) return;
-    travel = normalizeTravel(state.travel);
+    const incoming = normalizeTravel(state.travel);
+    travel = {
+      trips: reconcileArrayById(travel.trips, incoming.trips),
+      items: reconcileArrayById(travel.items, incoming.items),
+      flights: reconcileArrayById(travel.flights, incoming.flights),
+      stays: reconcileArrayById(travel.stays, incoming.stays),
+      checks: reconcileArrayById(travel.checks, incoming.checks),
+      summaries: reconcileArrayById(travel.summaries, incoming.summaries),
+    };
     localStorage.setItem(LS_TRAVEL, JSON.stringify(travel));
 
     if (travel.trips.length && !getActiveTrip()) setActiveTrip(sortedTrips()[0].id);
