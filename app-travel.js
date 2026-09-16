@@ -1554,26 +1554,57 @@ function buildChecklistDialog(trip) {
    =========================================================== */
 
 let mapsLoadPromise = null;
+
+/**
+ * 구글이 권장하는 "동적 라이브러리 불러오기" 부트스트랩 로더입니다.
+ * 예전에는 <script src=".../js?...&loading=async"> 를 직접 만들고 onload 되면
+ * 바로 new maps.Map() 을 썼는데, 그 시점엔 google.maps.importLibrary 자체가
+ * 아직 안 채워져 있을 때가 있어서(실제 스크립트 안에서 한 단계 더 비동기로
+ * 채워집니다) "google.maps.importLibrary is not a function" 으로 조용히
+ * 실패했습니다 — 모듈이 이미 캐시돼 있으면 우연히 제 시간에 채워져 있어
+ * 가끔은 되는 것처럼 보이기도 해서, API 키/허용 도메인 문제로 오인하기
+ * 쉬운 버그였습니다.
+ * 이 함수는 importLibrary 를 우리가 직접, 즉시(동기적으로) 만들어 두고
+ * 실제 스크립트가 준비되면(callback) 그 실물로 이어받는 방식이라 이
+ * 타이밍 문제가 없습니다. (구글 공식 부트스트랩 스니펫과 같은 방식)
+ */
+function ensureMapsBootstrap(apiKey) {
+  const google = (window.google = window.google || {});
+  const maps = (google.maps = google.maps || {});
+  if (maps.importLibrary) return;
+
+  const requested = new Set();
+  let loadPromise = null;
+  const load = () => loadPromise || (loadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    const params = new URLSearchParams({
+      key: apiKey,
+      v: 'weekly',
+      libraries: [...requested].join(','),
+      callback: 'google.maps.__ib__',
+    });
+    script.src = `https://maps.googleapis.com/maps/api/js?${params}`;
+    script.async = true;
+    maps.__ib__ = resolve;
+    script.onerror = () => { loadPromise = null; reject(new Error('구글맵 스크립트를 불러오지 못했습니다.')); };
+    document.head.appendChild(script);
+  }));
+  maps.importLibrary = (name, ...args) => {
+    requested.add(name);
+    return load().then(() => maps.importLibrary(name, ...args));
+  };
+}
+
 function loadGoogleMapsSdk() {
   if (typeof window === 'undefined') return Promise.reject(new Error('브라우저 환경이 아닙니다.'));
-  if (window.google && window.google.maps) return Promise.resolve();
+  if (window.google && window.google.maps && window.google.maps.Map) return Promise.resolve();
   if (mapsLoadPromise) return mapsLoadPromise;
 
-  mapsLoadPromise = new Promise((resolve, reject) => {
-    const existing = document.getElementById('google-maps-sdk');
-    if (existing) {
-      existing.addEventListener('load', () => resolve());
-      existing.addEventListener('error', () => { mapsLoadPromise = null; reject(new Error('구글맵 스크립트를 불러오지 못했습니다.')); });
-      return;
-    }
-    const script = document.createElement('script');
-    script.id = 'google-maps-sdk';
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${window.GOOGLE_MAPS_API_KEY}&loading=async`;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => { mapsLoadPromise = null; reject(new Error('구글맵 스크립트를 불러오지 못했습니다.')); };
-    document.head.appendChild(script);
-  });
+  ensureMapsBootstrap(window.GOOGLE_MAPS_API_KEY);
+  mapsLoadPromise = Promise.all([
+    window.google.maps.importLibrary('maps'),
+    window.google.maps.importLibrary('marker'),
+  ]).catch((err) => { mapsLoadPromise = null; throw err; });
   return mapsLoadPromise;
 }
 
