@@ -14,6 +14,16 @@
   var LS_BASE = 'campingApp.syncBase.v1';    // 마지막으로 맞춘 내용
   var LS_BACKUP = 'campingApp.backupPreSync.v1'; // 처음 연결하기 직전 백업
 
+  // 기록이 들어 있는 칸들. 어느 화면을 열고 있든 전부 읽고 씁니다.
+  // (캠핑 화면만 열었다고 여행 기록이 지워지면 안 되므로)
+  var LS_TRIPS = 'campingApp.trips.v1';
+  var LS_GEAR = 'campingApp.sharedGear.v1';
+  var LS_TRAVEL = 'coupleLog.travel.v1';
+
+  function emptyTravel() {
+    return { trips: [], items: [], flights: [], stays: [], checks: [], summaries: [] };
+  }
+
   var PUSH_DELAY = 1500;
   var POLL_MS = 60000;
 
@@ -137,13 +147,42 @@
     };
   }
 
-  /** 전체 기록 합치기 */
+  /**
+   * 여행일지의 행(일정 한 줄, 항공편 한 줄 …)을 합칩니다.
+   * 준비물처럼 중첩이 없는 통짜 객체라, updatedAt 이 늦은 쪽을 통째로 남깁니다.
+   */
+  function mergeRow(base, mine, theirs) {
+    if (same(mine, theirs)) return clone(mine);
+    if (same(mine, base)) return clone(theirs);
+    if (same(theirs, base)) return clone(mine);
+    return clone((mine.updatedAt || 0) >= (theirs.updatedAt || 0) ? mine : theirs);
+  }
+
+  /** 여행일지 전체(여행·일정·항공편·숙소·체크리스트·일차요약)를 합칩니다. */
+  function mergeTravel(base, mine, theirs) {
+    base = base || emptyTravel();
+    mine = mine || emptyTravel();
+    theirs = theirs || emptyTravel();
+    return {
+      trips: mergeList(base.trips, mine.trips, theirs.trips, undefined, mergeRow),
+      items: mergeList(base.items, mine.items, theirs.items, undefined, mergeRow),
+      flights: mergeList(base.flights, mine.flights, theirs.flights, undefined, mergeRow),
+      stays: mergeList(base.stays, mine.stays, theirs.stays, undefined, mergeRow),
+      checks: mergeList(base.checks, mine.checks, theirs.checks, undefined, mergeRow),
+      summaries: mergeList(base.summaries, mine.summaries, theirs.summaries, undefined, mergeRow),
+    };
+  }
+
+  /** 전체 기록 합치기. 캠핑일지와 여행일지를 한 번에 다룹니다. */
   function mergeState(base, mine, theirs) {
     base = base || {};
+    mine = mine || {};
+    theirs = theirs || {};
     // 메뉴는 일정 안(trip.menus)으로 옮겨져서 여기서는 다루지 않습니다.
     return {
       trips: mergeList(base.trips, mine.trips, theirs.trips, undefined, mergeTrip),
       sharedGear: mergeList(base.sharedGear, mine.sharedGear, theirs.sharedGear, true),
+      travel: mergeTravel(base.travel, mine.travel, theirs.travel),
     };
   }
 
@@ -228,9 +267,28 @@
     listeners.forEach(function (fn) { try { fn(status()); } catch (e) { /* 무시 */ } });
   }
 
+  /**
+   * 지금 이 페이지가 아는 만큼만 CampApp 에서 가져오고, 나머지(다른 화면의
+   * 몫)는 localStorage 에서 그대로 읽어 지나갑니다. 예를 들어 캠핑일지
+   * 화면은 travel 을 모르므로, 방금 travel.html 에서 저장해 둔 값을 그대로
+   * 들고 있다가 맞춘 뒤 다시 그대로 내려놓습니다. 그래서 한쪽 화면만 열어도
+   * 다른 화면의 기록이 지워지지 않습니다.
+   */
   function currentState() {
     var app = window.CampApp;
-    return app ? app.getState() : { trips: [], sharedGear: [] };
+    var own = app ? app.getState() || {} : {};
+    return {
+      trips: own.trips !== undefined ? own.trips : readLS(LS_TRIPS, []),
+      sharedGear: own.sharedGear !== undefined ? own.sharedGear : readLS(LS_GEAR, []),
+      travel: own.travel !== undefined ? own.travel : readLS(LS_TRAVEL, emptyTravel()),
+    };
+  }
+
+  /** 합쳐진 전체 기록을 세 칸 모두에 실제로 적어 둡니다 (지금 화면이 모르는 칸도). */
+  function persistAll(state) {
+    writeLS(LS_TRIPS, state.trips || []);
+    writeLS(LS_GEAR, state.sharedGear || []);
+    writeLS(LS_TRAVEL, state.travel || emptyTravel());
   }
 
   /* ---------- 맞추기 ---------- */
@@ -247,12 +305,13 @@
 
     return rpc('camp_pull', { p_code_hash: room.codeHash })
       .then(function (result) {
-        var remote = (result && result.data) || { trips: [], sharedGear: [] };
+        var remote = (result && result.data) || { trips: [], sharedGear: [], travel: emptyTravel() };
         var rev = (result && result.rev) || 0;
 
         var merged = mergeState(base, mine, remote);
 
-        // 합친 결과를 화면과 이 폰에 반영
+        // 이 폰에는 세 칸 모두 실제로 적어 두고, 화면에는 지금 페이지가 아는 만큼만 반영합니다.
+        persistAll(merged);
         if (window.CampApp) window.CampApp.applyState(merged, { rerender: !options.quiet });
 
         // 상대에게도 올려 둡니다 (달라진 게 있을 때만)
@@ -359,6 +418,7 @@
   function restoreBackup() {
     var backup = readLS(LS_BACKUP, null);
     if (!backup || !backup.state) return false;
+    persistAll(backup.state);
     if (window.CampApp) window.CampApp.applyState(backup.state, { rerender: true });
     return true;
   }
@@ -380,10 +440,15 @@
     // 점검용
     _merge: mergeState,
     _mergeTrip: mergeTrip,
+    _mergeTravel: mergeTravel,
+    _mergeRow: mergeRow,
     _mergeList: mergeList,
     _mergeMap: mergeMap,
     _makeRoomCode: makeRoomCode,
     _normalizeCode: normalizeCode,
+    _emptyTravel: emptyTravel,
+    _currentState: currentState,
+    _persistAll: persistAll,
   };
 
   if (room && isConfigured()) {

@@ -75,7 +75,7 @@ body {
 .app-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 10px 4px 16px;
 }
 
@@ -86,6 +86,25 @@ body {
   color: var(--text);
   text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 }
+
+/* 하위 화면(캠핑일지 · 여행일지)에서 허브로 돌아가는 링크 */
+.hub-back {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.hub-back:active { background: #fff; }
 
 /* ---- 함께 쓰기 막대 ---- */
 .sync-bar {
@@ -235,7 +254,9 @@ body {
   font-weight: 700;
 }
 
-.field input {
+.field input,
+.field select,
+.field textarea {
   width: 100%;
   background: var(--glass-strong);
   border: 1px solid var(--glass-edge);
@@ -244,8 +265,11 @@ body {
   padding: 12px;
   font-size: 0.95rem;
   font-family: inherit;
+  resize: vertical;
 }
-.field input:focus {
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
@@ -998,8 +1022,348 @@ input:focus-visible {
   .trip-tab,
   .sub-tab,
   .meal-grid,
-  .gear-add input {
+  .gear-add input,
+  .hub-card,
+  .day-block,
+  .item-row,
+  .flight-row {
     background: rgba(255, 255, 255, 0.88);
   }
   .sub-tab.active { background: #fff; }
+}
+
+/* ============================================================
+   여행일지 전용 — 준비물·식단의 유리판/버튼 클래스를 그대로 물려받고
+   여기서는 일정표·항공편·숙소·체크리스트에만 필요한 것을 더합니다.
+   ============================================================ */
+
+/* 4개짜리 2중 탭은 칸이 좁아지므로 세로로 살짝 눌러 줍니다. */
+.travel-sub-tabs .sub-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 9px 4px;
+  font-size: 0.8rem;
+}
+.travel-sub-tabs .sub-tab-count { margin-left: 0; font-size: 0.68rem; }
+
+/* ---- 일차 블록 ---- */
+.day-block {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.day-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--glass-edge);
+}
+
+.day-block-title { display: flex; align-items: baseline; gap: 8px; }
+.day-index { font-weight: 800; font-size: 0.98rem; color: var(--ember); }
+.day-date { font-size: 0.82rem; color: var(--text-dim); font-weight: 600; }
+
+.day-block-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.day-map-link,
+.day-summary-toggle {
+  border: 1px solid var(--glass-edge);
+  background: var(--glass-soft);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.day-summary-toggle:active,
+.day-map-link:active { background: var(--glass-strong); }
+
+.day-summary-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px dashed var(--glass-edge);
+  border-radius: var(--radius-sm);
+}
+.day-summary-label { font-size: 0.76rem; font-weight: 700; color: var(--text-dim); }
+.day-summary-input {
+  width: 100%;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-edge);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 9px 10px;
+  font-size: 0.86rem;
+  font-family: inherit;
+  resize: vertical;
+}
+.day-summary-input:focus {
+  outline: none;
+  border-color: var(--ember);
+  box-shadow: 0 0 0 3px var(--ember-soft);
+  background: #fff;
+}
+
+/* ---- 일정 한 줄 ---- */
+.item-list { display: flex; flex-direction: column; gap: 8px; }
+
+.item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-sm);
+  padding: 11px;
+  box-shadow: var(--shadow-sm);
+  touch-action: none;
+}
+.item-row.dragging { opacity: 0.55; box-shadow: 0 10px 22px rgba(6, 78, 59, 0.22); z-index: 5; position: relative; }
+.item-row.drop-above { border-top: 3px solid var(--primary); }
+.item-row.drop-below { border-bottom: 3px solid var(--primary); }
+
+.item-drag {
+  flex: 0 0 auto;
+  padding: 4px 2px;
+  color: var(--text-faint);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+
+.item-top { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.item-time {
+  font-weight: 800;
+  font-size: 0.82rem;
+  color: var(--primary-deep);
+  background: var(--primary-soft);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.item-cat { font-size: 0.78rem; color: var(--text-dim); font-weight: 600; }
+
+.item-schedule { margin: 0; font-size: 0.92rem; color: var(--text); line-height: 1.45; word-break: break-word; }
+
+.item-location {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  text-decoration: none;
+  width: fit-content;
+}
+a.item-location { color: var(--primary-deep); font-weight: 600; }
+
+.item-atts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.att-thumb {
+  width: 46px;
+  height: 46px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--glass-edge);
+  cursor: pointer;
+}
+.att-chip {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  background: var(--glass-soft);
+  border: 1px solid var(--glass-edge);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.item-actions { flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px; }
+
+.day-add-btn { margin-top: 4px; width: 100%; }
+
+/* ---- 일정 추가/수정 폼 ---- */
+.item-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--glass-soft);
+  border: 1px dashed var(--glass-edge);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-top: 8px;
+}
+.item-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.item-form-row > .field { min-width: 120px; }
+.item-form-textarea { min-height: 52px; }
+.item-form-error { margin: 0; font-size: 0.8rem; color: var(--danger); font-weight: 700; }
+
+.coord-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-family: inherit;
+}
+
+.att-field { display: flex; flex-direction: column; gap: 5px; }
+.att-file-row { display: flex; align-items: center; gap: 8px; }
+.att-file-row input[type="file"] { flex: 1; min-width: 0; font-size: 0.78rem; color: var(--text-dim); }
+.att-thumb-editing.hidden { display: none; }
+
+/* ---- 항공편 · 숙소 목록 (준비물과 같은 유리판, 다른 내용) ---- */
+.flight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-sm);
+  padding: 12px 13px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 8px;
+}
+.flight-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.flight-airline { font-weight: 700; font-size: 0.92rem; color: var(--text); }
+.flight-dates { font-size: 0.78rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+/* ---- 사진 확대 보기 ---- */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 20, 15, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 80;
+  cursor: zoom-out;
+}
+.lightbox img { max-width: 100%; max-height: 100%; border-radius: 12px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); }
+
+/* ============================================================
+   허브 화면 (index.html) — clothes-purchase 의 첫 화면과 같은 구성:
+   유리 카드 두 장이 각 일지로 들어가는 문입니다.
+   ============================================================ */
+.hub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 40px;
+  min-height: 100vh;
+  padding-block: 48px;
+  text-align: center;
+}
+
+.hub-intro { display: flex; flex-direction: column; gap: 8px; }
+
+.hub-eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  color: var(--primary-deep);
+  opacity: 0.75;
+}
+
+.hub-title {
+  margin: 0;
+  font-size: 2.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.hub-tagline {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-dim);
+}
+
+.hub-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 100%;
+  max-width: 420px;
+  padding-inline: 20px;
+}
+
+@media (min-width: 560px) {
+  .hub-cards { flex-direction: row; max-width: 620px; }
+}
+
+.hub-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 22px;
+  border-radius: var(--radius);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--blur);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  text-decoration: none;
+  transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+.hub-card:hover {
+  transform: translateY(-3px);
+  background: var(--glass-strong);
+  box-shadow: 0 16px 36px rgba(6, 78, 59, 0.18);
+}
+.hub-card:active { transform: translateY(0); }
+
+.hub-card-icon { font-size: 2.6rem; line-height: 1; margin-bottom: 4px; }
+
+.hub-card-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--primary-deep);
+  opacity: 0.7;
+}
+
+.hub-card-title {
+  margin: 2px 0 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.hub-card-desc {
+  margin: 0;
+  font-size: 0.86rem;
+  color: var(--text-dim);
+}
+
+.hub-foot {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-faint);
 }

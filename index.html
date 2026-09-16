@@ -4,62 +4,49 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#e8faf2">
-<title>캠핑 준비</title>
+<title>윤송부부일지</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="캠핑 준비">
+<meta name="apple-mobile-web-app-title" content="윤송부부일지">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<header class="app-header">
-  <h1>🏕️ 캠핑 준비</h1>
-</header>
+<main class="hub">
+  <div class="hub-intro">
+    <p class="hub-eyebrow">YOONSONG COUPLE LOG</p>
+    <h1 class="hub-title">윤송부부일지</h1>
+    <p class="hub-tagline">여행 기록과 캠핑 준비, 한 곳에서</p>
+  </div>
 
-<div id="syncBar" class="sync-bar hidden"></div>
+  <div class="hub-cards">
+    <a class="hub-card" href="travel.html">
+      <span class="hub-card-icon" aria-hidden="true">🗺️</span>
+      <span class="hub-card-eyebrow">TRAVEL LOG</span>
+      <h2 class="hub-card-title">여행일지</h2>
+      <p class="hub-card-desc">일정표 · 항공편 · 숙소 · 체크리스트</p>
+    </a>
 
-<section class="new-trip">
-  <button id="newTripToggle" class="new-trip-toggle" type="button">
-    <span>+ 새 캠핑 추가</span>
-    <span id="newTripChevron">▾</span>
-  </button>
+    <a class="hub-card" href="camping.html">
+      <span class="hub-card-icon" aria-hidden="true">🏕️</span>
+      <span class="hub-card-eyebrow">CAMPING LOG</span>
+      <h2 class="hub-card-title">캠핑일지</h2>
+      <p class="hub-card-desc">일정별 준비물 · 끼니 계획</p>
+    </a>
+  </div>
 
-  <form id="newTripForm" class="new-trip-form hidden">
-    <div class="field-row">
-      <label class="field">
-        <span class="field-label">시작일</span>
-        <input type="date" id="startInput" required>
-      </label>
-      <label class="field">
-        <span class="field-label">종료일</span>
-        <input type="date" id="endInput" required>
-      </label>
-    </div>
-    <label class="field">
-      <span class="field-label">장소</span>
-      <input type="text" id="placeInput" placeholder="예: 가평 자라섬 오토캠핑장" maxlength="40" required>
-    </label>
-    <button type="submit" class="btn btn-primary">캠핑 추가하기</button>
-  </form>
-</section>
+  <p class="hub-foot">두 일지는 방 코드 하나로 함께 씁니다</p>
+</main>
 
-<nav id="tripTabs" class="trip-tabs"></nav>
-
-<main id="tripPanel"></main>
-
-<div id="emptyState" class="empty-state">
-  <div class="empty-icon">⛺</div>
-  <p class="empty-title">아직 등록된 캠핑이 없어요</p>
-  <p class="empty-text">위의 <b>새 캠핑 추가</b>를 눌러<br>날짜와 장소를 넣어보세요.</p>
-</div>
-
-<div id="toast" class="toast hidden"></div>
-
-<script src="supabase-config.js"></script>
-<script src="app.js"></script>
-<script src="sync.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    });
+  }
+</script>
 </body>
 </html>

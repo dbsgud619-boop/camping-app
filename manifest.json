@@ -1,7 +1,7 @@
 {
-  "name": "캠핑 준비",
-  "short_name": "캠핑",
-  "description": "캠핑 일정별 준비물 체크와 끼니별 식단 계획",
+  "name": "윤송부부일지",
+  "short_name": "윤송일지",
+  "description": "여행일지(일정표·항공편·숙소·체크리스트)와 캠핑일지(준비물·식단 계획)를 함께 쓰는 부부 기록장",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

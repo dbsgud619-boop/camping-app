@@ -1,13 +1,19 @@
-const CACHE_NAME = 'camping-app-v18';
+const CACHE_NAME = 'coupleLog-v19';
 const ASSETS = [
   './',
   './index.html',
+  './camping.html',
+  './travel.html',
   './style.css',
   './app.js',
+  './app-travel.js',
   './sync.js',
+  './sync-ui.js',
   './supabase-config.js',
+  './travel-seed.js',
   './manifest.json',
   './icon.svg',
+  './assets/travel-429a5481-3.png',
 ];
 
 // 인터넷이 느릴 때 얼마나 기다렸다가 저장해 둔 파일로 넘어갈지

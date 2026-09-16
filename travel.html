@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#e8faf2">
+<title>윤송부부일지 · 여행일지</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="여행일지">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <a class="hub-back" href="index.html" aria-label="처음으로">←</a>
+  <h1>🗺️ 여행일지</h1>
+</header>
+
+<div id="syncBar" class="sync-bar hidden"></div>
+
+<section class="new-trip">
+  <button id="newTripToggle" class="new-trip-toggle" type="button">
+    <span>+ 새 여행 추가</span>
+    <span id="newTripChevron">▾</span>
+  </button>
+
+  <form id="newTripForm" class="new-trip-form hidden">
+    <div class="field-row">
+      <label class="field">
+        <span class="field-label">시작일</span>
+        <input type="date" id="startInput" required>
+      </label>
+      <label class="field">
+        <span class="field-label">종료일</span>
+        <input type="date" id="endInput" required>
+      </label>
+    </div>
+    <label class="field">
+      <span class="field-label">여행 이름</span>
+      <input type="text" id="nameInput" placeholder="예: 이집트 2026" maxlength="40" required>
+    </label>
+    <button type="submit" class="btn btn-primary">여행 추가하기</button>
+  </form>
+</section>
+
+<nav id="tripTabs" class="trip-tabs"></nav>
+
+<main id="tripPanel"></main>
+
+<div id="emptyState" class="empty-state">
+  <div class="empty-icon">🧳</div>
+  <p class="empty-title">아직 등록된 여행이 없어요</p>
+  <p class="empty-text">위의 <b>새 여행 추가</b>를 눌러<br>날짜와 이름을 넣어보세요.</p>
+</div>
+
+<div id="lightbox" class="lightbox hidden">
+  <img id="lightboxImg" alt="">
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="supabase-config.js"></script>
+<script src="sync.js"></script>
+<script src="sync-ui.js"></script>
+<script src="travel-seed.js"></script>
+<script src="app-travel.js"></script>
+</body>
+</html>

@@ -258,14 +258,9 @@ function mealTotalFilled(trip) {
   return datesOf(trip).reduce((sum, iso) => sum + mealFilledCount(trip, iso), 0);
 }
 
-let toastTimer = null;
-function showToast(msg) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.classList.remove('hidden');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.add('hidden'), 1800);
-}
+// showToast 는 sync-ui.js 가 정의해서 window 에 올려 둡니다.
+// (캠핑일지 · 여행일지가 같은 토스트를 씁니다. sync-ui.js 가 app.js 보다
+// 먼저 실행되도록 index.html 의 스크립트 순서를 지켜 주세요.)
 
 // ---- rendering ----
 function renderAll() {
@@ -1202,177 +1197,6 @@ window.CampApp = {
   toast: showToast,
 };
 
-/* ---- 함께 쓰기 막대 ---- */
-function renderSyncBar(state) {
-  const bar = document.getElementById('syncBar');
-  if (!bar) return;
-
-  const sync = window.CampSync;
-  if (!sync || !sync.isConfigured()) {
-    bar.classList.add('hidden');
-    return;
-  }
-  bar.classList.remove('hidden');
-  bar.innerHTML = '';
-
-  const info = state || sync.status();
-  const text = document.createElement('span');
-  text.className = 'sync-text';
-
-  const actions = document.createElement('div');
-  actions.className = 'sync-actions';
-
-  const makeBtn = (label, onClick, cls) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'sync-btn' + (cls ? ' ' + cls : '');
-    b.textContent = label;
-    b.addEventListener('click', onClick);
-    return b;
-  };
-
-  if (info.state === 'off') {
-    bar.classList.remove('on');
-    text.textContent = '이 폰에만 저장 중';
-    actions.appendChild(makeBtn('함께 쓰기', openRoomDialog, 'primary'));
-  } else {
-    bar.classList.add('on');
-    text.textContent = info.state === 'syncing'
-      ? '맞추는 중…'
-      : `함께 쓰는 중 · ${syncedAgo(info.syncedAt)}`;
-    actions.appendChild(makeBtn('초대하기', shareInvite, 'primary'));
-    actions.appendChild(makeBtn('나가기', leaveRoomAsked));
-  }
-
-  bar.appendChild(text);
-  bar.appendChild(actions);
-}
-
-function syncedAgo(ts) {
-  if (!ts) return '맞추는 중';
-  const sec = Math.floor((Date.now() - ts) / 1000);
-  if (sec < 60) return '방금 맞춤';
-  if (sec < 3600) return `${Math.floor(sec / 60)}분 전 맞춤`;
-  return `${Math.floor(sec / 3600)}시간 전 맞춤`;
-}
-
-function openRoomDialog() {
-  const makeNew = window.confirm(
-    '같이 쓸 방을 엽니다.\n\n'
-    + '[확인] 새 방 만들기 — 지금 이 폰의 기록을 그대로 올립니다\n'
-    + '[취소] 받은 방 코드 넣기 — 내 기록과 방 기록을 모두 합칩니다'
-  );
-
-  if (makeNew) {
-    window.CampSync.createRoom()
-      .then((code) => {
-        renderSyncBar();
-        window.prompt('방이 열렸어요. 이 코드를 같이 갈 사람에게 보내세요.', code);
-      })
-      .catch((err) => showToast('방을 열지 못했어요: ' + err.message));
-    return;
-  }
-
-  const code = window.prompt('받은 방 코드를 넣어주세요');
-  if (code === null) return;
-
-  window.CampSync.joinRoom(code)
-    .then(() => {
-      renderSyncBar();
-      showToast('방에 들어왔어요. 기록을 합쳤습니다');
-    })
-    .catch((err) => showToast(err.message));
-}
-
-/** 방 코드는 # 뒤에 붙입니다. # 뒤는 서버로 전송되지 않아 기록에 남지 않습니다. */
-function inviteUrl(code) {
-  return location.origin + location.pathname + '#room=' + encodeURIComponent(code);
-}
-
-function copyText(text) {
-  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
-  return new Promise((resolve, reject) => {
-    const area = document.createElement('textarea');
-    area.value = text;
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.appendChild(area);
-    area.select();
-    try {
-      document.execCommand('copy') ? resolve() : reject(new Error('복사 실패'));
-    } catch (e) {
-      reject(e);
-    }
-    document.body.removeChild(area);
-  });
-}
-
-function shareInvite() {
-  const info = window.CampSync.status();
-  if (!info.code) return;
-
-  const url = inviteUrl(info.code);
-  const text = `캠핑 준비 앱에 초대합니다.\n링크를 열면 같은 기록을 함께 볼 수 있어요.\n\n방 코드: ${info.code}`;
-
-  if (navigator.share) {
-    navigator.share({ title: '캠핑 준비 · 함께 쓰기', text, url }).catch(() => {});
-    return;
-  }
-
-  copyText(`${text}\n${url}`)
-    .then(() => showToast('초대 링크를 복사했어요'))
-    .catch(() => window.prompt('이 링크를 보내세요', url));
-}
-
-/** 초대 링크로 들어온 경우 처리합니다. */
-function handleInviteLink() {
-  const match = location.hash.match(/room=([A-Za-z0-9-]+)/);
-  if (!match) return;
-
-  const code = decodeURIComponent(match[1]);
-  const sync = window.CampSync;
-  const clearHash = () => history.replaceState(null, '', location.pathname + location.search);
-
-  if (!sync || !sync.isConfigured()) {
-    clearHash();
-    return;
-  }
-
-  const info = sync.status();
-  if (info.code && sync._normalizeCode(info.code) === sync._normalizeCode(code)) {
-    clearHash();
-    showToast('이미 이 방에 있어요');
-    return;
-  }
-
-  const ask = info.state === 'off'
-    ? '초대를 받았어요.\n이 방에 들어갈까요?\n\n지금 이 폰의 기록과 방 기록을 모두 합칩니다.'
-    : '초대를 받았어요.\n지금 방에서 나와 이 방으로 옮길까요?\n\n이 폰의 기록은 그대로 남습니다.';
-
-  if (!window.confirm(ask)) {
-    clearHash();
-    return;
-  }
-
-  sync.joinRoom(code)
-    .then(() => {
-      clearHash();
-      renderSyncBar();
-      showToast('방에 들어왔어요. 기록을 합쳤습니다');
-    })
-    .catch((err) => {
-      clearHash();
-      showToast(err.message);
-    });
-}
-
-function leaveRoomAsked() {
-  if (!window.confirm('이 폰을 방에서 빼낼까요?\n\n지금까지의 기록은 이 폰에 그대로 남습니다.')) return;
-  window.CampSync.leaveRoom();
-  renderSyncBar();
-  showToast('방에서 나왔어요');
-}
-
 // ---- init ----
 migrateGlobalMenus();
 
@@ -1385,13 +1209,6 @@ if (trips.length && !getActiveTrip()) setActiveTrip(trips[0].id);
 if (trips.length === 0) toggleNewTripForm(true);
 
 renderAll();
-
-// 함께 쓰기 막대는 sync.js 가 준비된 뒤에 그립니다.
-window.addEventListener('load', () => {
-  renderSyncBar();
-  if (window.CampSync) window.CampSync.onChange(renderSyncBar);
-  handleInviteLink();
-});
 
 if ('serviceWorker' in navigator) {
   // 앱을 켤 때 이미 예전 버전이 돌고 있었는지 기억해 둡니다.
