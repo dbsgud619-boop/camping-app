@@ -1258,6 +1258,15 @@ input:focus-visible {
   font-family: inherit;
   background: #fff;
 }
+.loc-field { display: flex; align-items: center; gap: 3px; }
+.loc-field .cell-input { flex: 1; min-width: 0; }
+.loc-search-btn {
+  flex: none; border: none; background: none; cursor: pointer;
+  font-size: 0.78rem; padding: 2px; line-height: 1; border-radius: 6px;
+}
+.loc-search-btn:hover { background: var(--shade); }
+.loc-search-holder { min-height: 44px; }
+.loc-search-holder gmp-place-autocomplete { width: 100%; }
 .att-edit input.cell-input.att1 { border-color: var(--att1-border); }
 .att-edit input.cell-input.att2 { border-color: var(--att2-border); }
 .att-edit input.cell-input.att3 { border-color: var(--att3-border); }

@@ -757,12 +757,38 @@ function buildFieldCells(values, options) {
   cells.push(schedTd);
 
   const locTd = document.createElement('td');
+  const locWrap = document.createElement('div');
+  locWrap.className = 'loc-field';
   const locInput = document.createElement('input');
   locInput.type = 'text';
   locInput.className = 'cell-input';
+  locInput.placeholder = '위치';
   locInput.value = values.location || '';
-  locInput.addEventListener('input', () => { values.location = locInput.value; });
-  locTd.appendChild(locInput);
+  locInput.addEventListener('input', () => {
+    values.location = locInput.value;
+    // 직접 타이핑하면(장소 검색으로 고른 게 아니면) 좌표는 더 이상 못 믿으므로 비웁니다.
+    values.lat = null;
+    values.lng = null;
+  });
+  const searchBtn = document.createElement('button');
+  searchBtn.type = 'button';
+  searchBtn.className = 'loc-search-btn';
+  searchBtn.textContent = '🔍';
+  searchBtn.title = '장소 검색 (고르면 좌표까지 저장돼요)';
+  searchBtn.addEventListener('click', () => {
+    openModal(buildPlaceSearchDialog(({ label, lat, lng }) => {
+      values.location = label || values.location;
+      values.lat = lat;
+      values.lng = lng;
+      locInput.value = values.location;
+      // '완료'로 저장되도록 change 를 흘려보냅니다. (input 이벤트로 보내면
+      // 위 리스너가 좌표를 다시 지워버립니다)
+      locInput.dispatchEvent(new Event('change', { bubbles: true }));
+    }));
+  });
+  locWrap.appendChild(locInput);
+  locWrap.appendChild(searchBtn);
+  locTd.appendChild(locWrap);
   cells.push(locTd);
 
   [1, 2, 3].forEach((slot) => {
@@ -838,6 +864,7 @@ function buildEditableRow(trip, day, item, onDone) {
 
   const values = {
     time: item.time, category: item.category, schedule: item.schedule, location: item.location,
+    lat: item.lat, lng: item.lng,
     att: item.att.map((a) => ({ text: a.text, image: a.image })),
   };
 
@@ -874,6 +901,7 @@ function buildEditableRow(trip, day, item, onDone) {
   const applyLive = () => {
     item.time = values.time; item.category = values.category;
     item.schedule = values.schedule; item.location = values.location;
+    item.lat = values.lat; item.lng = values.lng;
     item.att = values.att.map((a) => ({ text: a.text, image: a.image }));
     item.updatedAt = Date.now();
   };
@@ -887,7 +915,7 @@ function buildNewItemRow(trip, day, onDone) {
   const tr = document.createElement('tr');
   tr.className = 'item-tr editing';
 
-  const values = { time: '', category: '', schedule: '', location: '', att: [{ text: '', image: '' }, { text: '', image: '' }, { text: '', image: '' }] };
+  const values = { time: '', category: '', schedule: '', location: '', lat: null, lng: null, att: [{ text: '', image: '' }, { text: '', image: '' }, { text: '', image: '' }] };
   buildFieldCells(values, { allowImages: false }).forEach((td) => tr.appendChild(td));
 
   const actionTd = document.createElement('td');
@@ -915,7 +943,7 @@ function buildNewItemRow(trip, day, onDone) {
       id: newId(), tripId: trip.id, day,
       date: addDaysISO(trip.start, day - 1),
       time: values.time, category: values.category, schedule: values.schedule, location: values.location,
-      lat: null, lng: null,
+      lat: values.lat, lng: values.lng,
       att: values.att.map((a) => ({ text: a.text, image: a.image })),
       order: siblings.length,
       updatedAt: Date.now(),
@@ -1603,15 +1631,68 @@ function ensureMapsBootstrap(apiKey) {
 
 function loadGoogleMapsSdk() {
   if (typeof window === 'undefined') return Promise.reject(new Error('브라우저 환경이 아닙니다.'));
-  if (window.google && window.google.maps && window.google.maps.Map) return Promise.resolve();
+  if (window.google && window.google.maps && window.google.maps.Map && window.google.maps.places) return Promise.resolve();
   if (mapsLoadPromise) return mapsLoadPromise;
 
   ensureMapsBootstrap(window.GOOGLE_MAPS_API_KEY);
   mapsLoadPromise = Promise.all([
     window.google.maps.importLibrary('maps'),
     window.google.maps.importLibrary('marker'),
+    window.google.maps.importLibrary('places'),
   ]).catch((err) => { mapsLoadPromise = null; throw err; });
   return mapsLoadPromise;
+}
+
+/**
+ * 장소 검색 대화상자. 구글이 지금 권장하는 PlaceAutocompleteElement 는
+ * 기존 <input> 에 값을 미리 채워 넣는 방법이 마땅치 않은 새 위젯(자체
+ * 컴포넌트)이라, 위치 칸 옆 🔍 버튼을 누르면 이 작은 대화상자를 열어
+ * 검색 전용으로 쓰고, 고른 결과만 실제 위치 칸으로 돌려줍니다.
+ * (레거시 google.maps.places.Autocomplete 는 2025년 3월 이후 신규
+ * 프로젝트에 활성화가 막혀 있어 쓸 수 없습니다)
+ */
+function buildPlaceSearchDialog(onPick) {
+  const card = document.createElement('div');
+  card.className = 'modal-card';
+  modalHeader(card, '장소 검색', '목록에서 고르면 좌표까지 함께 저장돼요.');
+
+  const body = document.createElement('div');
+  body.className = 'modal-body';
+  const holder = document.createElement('div');
+  holder.className = 'loc-search-holder';
+  body.appendChild(holder);
+  const hint = document.createElement('p');
+  hint.className = 'modal-hint';
+  hint.textContent = '검색창을 불러오는 중...';
+  body.appendChild(hint);
+  card.appendChild(body);
+
+  loadGoogleMapsSdk()
+    .then(() => {
+      if (!window.google.maps.places || !window.google.maps.places.PlaceAutocompleteElement) {
+        hint.textContent = '장소 검색을 쓸 수 없어요. (Places API (New) 활성화 여부를 확인해주세요)';
+        return;
+      }
+      hint.remove();
+      const el = new window.google.maps.places.PlaceAutocompleteElement();
+      el.style.width = '100%';
+      holder.appendChild(el);
+      el.addEventListener('gmp-select', async ({ placePrediction }) => {
+        const place = placePrediction.toPlace();
+        await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
+        onPick({
+          // 옮겨온 기존 자료가 "카이로국제공항"처럼 짧은 장소 이름이라, 전체
+          // 도로명 주소보다 장소 이름을 우선 씁니다.
+          label: place.displayName || place.formattedAddress || '',
+          lat: place.location ? place.location.lat() : null,
+          lng: place.location ? place.location.lng() : null,
+        });
+        closeModal();
+      });
+    })
+    .catch(() => { hint.textContent = '장소 검색을 불러오지 못했어요.'; });
+
+  return card;
 }
 
 /** 일차 → sortOrder 순서 그대로, 좌표가 있는 항목만 골라 씁니다. */

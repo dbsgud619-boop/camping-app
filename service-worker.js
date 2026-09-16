@@ -1,4 +1,4 @@
-const CACHE_NAME = 'coupleLog-v24';
+const CACHE_NAME = 'coupleLog-v25';
 const ASSETS = [
   './',
   './index.html',
