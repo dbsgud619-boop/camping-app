@@ -71,7 +71,8 @@ function seedTripMeals(trip) {
 //   trip.checks : 공용 항목을 이 일정에서 챙겼는지 (체크는 일정별로 따로)
 let trips = loadTrips();
 let sharedGear = loadSharedGear();
-let menuItems = loadMenuItems(); // 끌어다 쓰는 메뉴 꾸러미 (모든 일정 공통)
+// 메뉴 꾸러미는 일정마다 따로입니다 (trip.menus).
+// 예전에 모든 일정이 함께 쓰던 목록이 남아 있으면 일정마다 복사해 옮깁니다.
 let activeTripId = localStorage.getItem(LS_ACTIVE_TRIP) || (trips[0] ? trips[0].id : null);
 let activeSubTab = localStorage.getItem(LS_SUB_TAB) || 'gear';
 let addScope = localStorage.getItem(LS_ADD_SCOPE) === 'trip' ? 'trip' : 'shared';
@@ -82,6 +83,7 @@ let addScope = localStorage.getItem(LS_ADD_SCOPE) === 'trip' ? 'trip' : 'shared'
  */
 function normalizeTrip(trip) {
   if (!Array.isArray(trip.gear)) trip.gear = [];
+  if (!Array.isArray(trip.menus)) trip.menus = [];
   if (!trip.checks || typeof trip.checks !== 'object') trip.checks = {};
   if (!trip.meals || typeof trip.meals !== 'object') trip.meals = {};
 
@@ -132,9 +134,20 @@ function loadMenuItems() {
     return [];
   }
 }
-function saveMenuItems() {
-  localStorage.setItem(LS_MENU, JSON.stringify(menuItems));
-  pushToRoom();
+/** 예전의 '모든 일정 공통' 메뉴 목록을 일정별로 옮깁니다. 한 번만 돕니다. */
+function migrateGlobalMenus() {
+  const legacy = loadMenuItems();
+  if (!legacy.length) {
+    localStorage.removeItem(LS_MENU);
+    return;
+  }
+  trips.forEach((trip) => {
+    if (trip.menus.length === 0) {
+      trip.menus = legacy.map((m) => ({ id: newId(), text: m.text }));
+    }
+  });
+  localStorage.setItem(LS_TRIPS, JSON.stringify(trips));
+  localStorage.removeItem(LS_MENU);
 }
 
 function loadSharedGear() {
@@ -767,7 +780,7 @@ function refreshSubTabCounts(trip) {
 const DAYS_PER_GRID = 3;
 
 function buildMeals(trip, body) {
-  body.appendChild(buildMenuPalette());
+  body.appendChild(buildMenuPalette(trip));
 
   const dates = datesOf(trip);
   for (let from = 0; from < dates.length; from += DAYS_PER_GRID) {
@@ -775,11 +788,11 @@ function buildMeals(trip, body) {
     body.appendChild(buildMealGrid(trip, group, from));
   }
 
-  renderMenuChips();
+  renderMenuChips(trip);
 }
 
 // ---- 메뉴 꾸러미 : 적어 두고 칸으로 끌어다 놓습니다 ----
-function buildMenuPalette() {
+function buildMenuPalette(trip) {
   const wrap = document.createElement('section');
   wrap.className = 'menu-palette';
 
@@ -788,7 +801,7 @@ function buildMenuPalette() {
 
   const input = document.createElement('input');
   input.type = 'text';
-  input.placeholder = '자주 먹는 메뉴 (예: 김치찌개)';
+  input.placeholder = '이 캠핑에서 먹을 메뉴 (예: 김치찌개)';
   input.maxLength = 20;
   input.autocomplete = 'off';
 
@@ -805,16 +818,16 @@ function buildMenuPalette() {
     if (!text) return;
 
     const norm = (s) => s.replace(/\s+/g, ' ').trim();
-    if (menuItems.some((m) => norm(m.text) === norm(text))) {
+    if (trip.menus.some((m) => norm(m.text) === norm(text))) {
       showToast(`'${text}'은(는) 이미 있어요`);
       return;
     }
 
-    menuItems.push({ id: newId(), text });
-    saveMenuItems();
+    trip.menus.push({ id: newId(), text });
+    saveTrips();
     input.value = '';
     input.focus();
-    renderMenuChips();
+    renderMenuChips(trip);
   });
 
   const chips = document.createElement('div');
@@ -831,20 +844,20 @@ function buildMenuPalette() {
   return wrap;
 }
 
-function renderMenuChips() {
+function renderMenuChips(trip) {
   const box = document.getElementById('menuChips');
   if (!box) return;
   box.innerHTML = '';
 
-  if (menuItems.length === 0) {
+  if (trip.menus.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'menu-empty';
-    empty.textContent = '메뉴를 적어 두면 끌어다 쓸 수 있어요.';
+    empty.textContent = '이 캠핑에서 먹을 메뉴를 적어 두면 끌어다 쓸 수 있어요.';
     box.appendChild(empty);
     return;
   }
 
-  menuItems.forEach((item) => {
+  trip.menus.forEach((item) => {
     const chip = document.createElement('div');
     chip.className = 'menu-chip';
 
@@ -859,9 +872,9 @@ function renderMenuChips() {
     del.setAttribute('aria-label', `메뉴 ${item.text} 지우기`);
     del.addEventListener('click', (e) => {
       e.stopPropagation();
-      menuItems = menuItems.filter((m) => m.id !== item.id);
-      saveMenuItems();
-      renderMenuChips();
+      trip.menus = trip.menus.filter((m) => m.id !== item.id);
+      saveTrips();
+      renderMenuChips(trip);
     });
 
     chip.appendChild(label);
@@ -1037,6 +1050,7 @@ function addTrip(start, end, place) {
     end,
     createdAt: Date.now(),
     gear: [],    // 이 일정에만 필요한 항목
+    menus: [],   // 끌어다 쓰는 메뉴 꾸러미 (이 일정 전용)
     checks: {},  // 공용 항목은 새 일정에서 전부 체크 해제로 시작합니다
     meals: {},
   };
@@ -1142,7 +1156,6 @@ window.CampApp = {
     return {
       trips: JSON.parse(JSON.stringify(trips)),
       sharedGear: JSON.parse(JSON.stringify(sharedGear)),
-      menuItems: JSON.parse(JSON.stringify(menuItems)),
     };
   },
 
@@ -1151,11 +1164,18 @@ window.CampApp = {
     if (!state) return;
     trips = Array.isArray(state.trips) ? state.trips.map(normalizeTrip) : [];
     sharedGear = Array.isArray(state.sharedGear) ? state.sharedGear : [];
-    menuItems = Array.isArray(state.menuItems) ? state.menuItems : [];
+
+    // 방에 예전 방식(모든 일정 공통)의 메뉴가 남아 있으면 일정마다 옮겨 담습니다.
+    if (Array.isArray(state.menuItems) && state.menuItems.length) {
+      trips.forEach((trip) => {
+        if (trip.menus.length === 0) {
+          trip.menus = state.menuItems.map((m) => ({ id: newId(), text: m.text }));
+        }
+      });
+    }
 
     localStorage.setItem(LS_TRIPS, JSON.stringify(trips));
     localStorage.setItem(LS_SHARED_GEAR, JSON.stringify(sharedGear));
-    localStorage.setItem(LS_MENU, JSON.stringify(menuItems));
 
     if (trips.length && !getActiveTrip()) setActiveTrip(trips[0].id);
     if (!trips.length) setActiveTrip(null);
@@ -1262,6 +1282,8 @@ function leaveRoomAsked() {
 }
 
 // ---- init ----
+migrateGlobalMenus();
+
 const today = todayISO();
 startInput.value = today;
 endInput.value = addDaysISO(today, 1);

@@ -131,6 +131,7 @@
       createdAt: mine.createdAt || theirs.createdAt,
       updatedAt: Math.max(mine.updatedAt || 0, theirs.updatedAt || 0),
       gear: mergeList(base.gear, mine.gear, theirs.gear, pick),
+      menus: mergeList(base.menus, mine.menus, theirs.menus, pick),
       checks: mergeMap(base.checks, mine.checks, theirs.checks, pick, false),
       meals: mergeMap(base.meals, mine.meals, theirs.meals, pick, true),
     };
@@ -139,10 +140,10 @@
   /** 전체 기록 합치기 */
   function mergeState(base, mine, theirs) {
     base = base || {};
+    // 메뉴는 일정 안(trip.menus)으로 옮겨져서 여기서는 다루지 않습니다.
     return {
       trips: mergeList(base.trips, mine.trips, theirs.trips, undefined, mergeTrip),
       sharedGear: mergeList(base.sharedGear, mine.sharedGear, theirs.sharedGear, true),
-      menuItems: mergeList(base.menuItems, mine.menuItems, theirs.menuItems, true),
     };
   }
 
@@ -229,7 +230,7 @@
 
   function currentState() {
     var app = window.CampApp;
-    return app ? app.getState() : { trips: [], sharedGear: [], menuItems: [] };
+    return app ? app.getState() : { trips: [], sharedGear: [] };
   }
 
   /* ---------- 맞추기 ---------- */
@@ -246,7 +247,7 @@
 
     return rpc('camp_pull', { p_code_hash: room.codeHash })
       .then(function (result) {
-        var remote = (result && result.data) || { trips: [], sharedGear: [], menuItems: [] };
+        var remote = (result && result.data) || { trips: [], sharedGear: [] };
         var rev = (result && result.rev) || 0;
 
         var merged = mergeState(base, mine, remote);
