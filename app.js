@@ -956,14 +956,21 @@ function attachChipDrag(chip, text) {
 function buildMealGrid(trip, isoList, offset) {
   const grid = document.createElement('div');
   grid.className = 'meal-grid';
-  grid.style.setProperty('--cols', String(isoList.length));
+  // 남는 일수가 있어도 칸 너비가 달라지지 않게 늘 세 칸으로 둡니다.
+  grid.style.setProperty('--cols', String(DAYS_PER_GRID));
+
+  const blank = (cls) => {
+    const cell = document.createElement('div');
+    cell.className = cls;
+    return cell;
+  };
 
   // 왼쪽 위 빈 칸 (끼니 이름 열의 머리)
   const corner = document.createElement('div');
   corner.className = 'mg-corner';
   grid.appendChild(corner);
 
-  // 첫 줄: 일차 머리말
+  // 첫 줄: 일차 머리말 (없는 날 자리는 빈 칸으로 채웁니다)
   const counters = {};
   isoList.forEach((iso, i) => {
     if (!trip.meals[iso]) trip.meals[iso] = {};
@@ -989,6 +996,11 @@ function buildMealGrid(trip, isoList, offset) {
     head.appendChild(count);
     grid.appendChild(head);
   });
+
+  // 날이 모자라는 자리는 빈 칸으로 채워 세 칸 너비를 지킵니다.
+  for (let slot = isoList.length; slot < DAYS_PER_GRID; slot += 1) {
+    grid.appendChild(blank('mg-head-empty'));
+  }
 
   // 끼니마다 한 줄 : 왼쪽에 이름, 오른쪽으로 일차별 빈칸
   MEALS.forEach((meal) => {
@@ -1025,6 +1037,10 @@ function buildMealGrid(trip, isoList, offset) {
 
       grid.appendChild(input);
     });
+
+    for (let slot = isoList.length; slot < DAYS_PER_GRID; slot += 1) {
+      grid.appendChild(blank('mg-empty'));
+    }
   });
 
   return grid;

@@ -795,11 +795,20 @@ body {
 }
 
 .mg-corner,
-.mg-day {
+.mg-day,
+.mg-head-empty {
   padding-bottom: 10px;
   border-bottom: 1px solid var(--glass-edge);
   align-self: stretch;
 }
+
+/* 날이 모자라는 자리. 자리만 차지하고 아무것도 그리지 않습니다. */
+.mg-empty,
+.mg-head-empty {
+  background: none;
+  border-color: transparent;
+}
+.mg-head-empty { border-bottom-color: var(--glass-edge); }
 
 .mg-day {
   display: flex;
