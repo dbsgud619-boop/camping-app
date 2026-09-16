@@ -90,14 +90,20 @@ let activeTripId = localStorage.getItem(LS_ACTIVE_TRIP) || null;
 /**
  * travel-journal 웹에서 옮겨온 첫 자료를 한 번만 넣습니다.
  * 이미 기록이 있으면(다른 기기에서 먼저 썼거나, 이미 한 번 들어왔으면) 건드리지 않습니다.
+ *
+ * '불러왔음' 표시(LS_SEEDED)는 실제로 데이터를 넣은 뒤에만 남깁니다.
+ * 예전에는 이 표시를 맨 앞에서 먼저 남겼는데, 그 사이 travel-seed.js
+ * 가 아직 안 떠서 window.TRAVEL_SEED 가 비어 있으면(서비스워커 갱신
+ * 직후 새로고침 같은 때) 다시는 시도하지 않고 빈 상태로 영영 굳어
+ * 버리는 문제가 있었습니다.
  */
 function maybeImportSeed() {
   if (localStorage.getItem(LS_SEEDED)) return false;
-  localStorage.setItem(LS_SEEDED, '1');
-  if (travel.trips.length > 0) return false;
+  if (travel.trips.length > 0) { localStorage.setItem(LS_SEEDED, '1'); return false; }
   const seed = window.TRAVEL_SEED;
   if (!seed || !Array.isArray(seed.trips) || seed.trips.length === 0) return false;
 
+  localStorage.setItem(LS_SEEDED, '1');
   travel = normalizeTravel(JSON.parse(JSON.stringify(seed)));
   saveTravel();
   return true;
@@ -1875,6 +1881,31 @@ renderAll();
 if (seeded) {
   const t = sortedTrips()[0];
   if (t) showToast(`${t.name} 여행 기록을 가져왔어요`);
+}
+
+/**
+ * 자동 불러오기(maybeImportSeed)가 실행되는 시점에 travel-seed.js 가
+ * 아직 안 떠 있었으면(예: 서비스워커 갱신 직후 자동 새로고침과 겹친 경우)
+ * '불러왔음' 표시만 남고 자료는 못 들어온 채로 굳어버릴 수 있습니다.
+ * 그런 경우를 위해 여행이 하나도 없을 때만 보이는 수동 버튼을 둡니다.
+ */
+const reimportSeedBtn = document.getElementById('reimportSeedBtn');
+if (reimportSeedBtn) {
+  reimportSeedBtn.addEventListener('click', () => {
+    if (travel.trips.length > 0) { showToast('이미 여행 기록이 있어서 불러오지 않았어요.'); return; }
+    const seed = window.TRAVEL_SEED;
+    if (!seed || !Array.isArray(seed.trips) || seed.trips.length === 0) {
+      showToast('불러올 자료가 아직 없어요. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    localStorage.setItem(LS_SEEDED, '1');
+    travel = normalizeTravel(JSON.parse(JSON.stringify(seed)));
+    saveTravel();
+    if (travel.trips.length) setActiveTrip(sortedTrips()[0].id);
+    renderAll();
+    const t = sortedTrips()[0];
+    if (t) showToast(`${t.name} 여행 기록을 다시 가져왔어요`);
+  });
 }
 
 if ('serviceWorker' in navigator) {
