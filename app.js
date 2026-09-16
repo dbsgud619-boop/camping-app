@@ -1224,7 +1224,7 @@ function renderSyncBar(state) {
     text.textContent = info.state === 'syncing'
       ? '맞추는 중…'
       : `함께 쓰는 중 · ${syncedAgo(info.syncedAt)}`;
-    actions.appendChild(makeBtn('방 코드', showRoomCode));
+    actions.appendChild(makeBtn('초대하기', shareInvite, 'primary'));
     actions.appendChild(makeBtn('나가기', leaveRoomAsked));
   }
 
@@ -1268,10 +1268,86 @@ function openRoomDialog() {
     .catch((err) => showToast(err.message));
 }
 
-function showRoomCode() {
+/** 방 코드는 # 뒤에 붙입니다. # 뒤는 서버로 전송되지 않아 기록에 남지 않습니다. */
+function inviteUrl(code) {
+  return location.origin + location.pathname + '#room=' + encodeURIComponent(code);
+}
+
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  return new Promise((resolve, reject) => {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try {
+      document.execCommand('copy') ? resolve() : reject(new Error('복사 실패'));
+    } catch (e) {
+      reject(e);
+    }
+    document.body.removeChild(area);
+  });
+}
+
+function shareInvite() {
   const info = window.CampSync.status();
   if (!info.code) return;
-  window.prompt('같이 갈 사람에게 이 코드를 보내세요.', info.code);
+
+  const url = inviteUrl(info.code);
+  const text = `캠핑 준비 앱에 초대합니다.\n링크를 열면 같은 기록을 함께 볼 수 있어요.\n\n방 코드: ${info.code}`;
+
+  if (navigator.share) {
+    navigator.share({ title: '캠핑 준비 · 함께 쓰기', text, url }).catch(() => {});
+    return;
+  }
+
+  copyText(`${text}\n${url}`)
+    .then(() => showToast('초대 링크를 복사했어요'))
+    .catch(() => window.prompt('이 링크를 보내세요', url));
+}
+
+/** 초대 링크로 들어온 경우 처리합니다. */
+function handleInviteLink() {
+  const match = location.hash.match(/room=([A-Za-z0-9-]+)/);
+  if (!match) return;
+
+  const code = decodeURIComponent(match[1]);
+  const sync = window.CampSync;
+  const clearHash = () => history.replaceState(null, '', location.pathname + location.search);
+
+  if (!sync || !sync.isConfigured()) {
+    clearHash();
+    return;
+  }
+
+  const info = sync.status();
+  if (info.code && sync._normalizeCode(info.code) === sync._normalizeCode(code)) {
+    clearHash();
+    showToast('이미 이 방에 있어요');
+    return;
+  }
+
+  const ask = info.state === 'off'
+    ? '초대를 받았어요.\n이 방에 들어갈까요?\n\n지금 이 폰의 기록과 방 기록을 모두 합칩니다.'
+    : '초대를 받았어요.\n지금 방에서 나와 이 방으로 옮길까요?\n\n이 폰의 기록은 그대로 남습니다.';
+
+  if (!window.confirm(ask)) {
+    clearHash();
+    return;
+  }
+
+  sync.joinRoom(code)
+    .then(() => {
+      clearHash();
+      renderSyncBar();
+      showToast('방에 들어왔어요. 기록을 합쳤습니다');
+    })
+    .catch((err) => {
+      clearHash();
+      showToast(err.message);
+    });
 }
 
 function leaveRoomAsked() {
@@ -1298,6 +1374,7 @@ renderAll();
 window.addEventListener('load', () => {
   renderSyncBar();
   if (window.CampSync) window.CampSync.onChange(renderSyncBar);
+  handleInviteLink();
 });
 
 if ('serviceWorker' in navigator) {
