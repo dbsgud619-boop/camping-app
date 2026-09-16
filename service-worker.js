@@ -1,4 +1,4 @@
-const CACHE_NAME = 'coupleLog-v19';
+const CACHE_NAME = 'coupleLog-v20';
 const ASSETS = [
   './',
   './index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   './sync.js',
   './sync-ui.js',
   './supabase-config.js',
+  './maps-config.js',
   './travel-seed.js',
   './manifest.json',
   './icon.svg',

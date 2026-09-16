@@ -1,14 +1,13 @@
 // ---- storage keys ----
 const LS_TRAVEL = 'coupleLog.travel.v1';
 const LS_ACTIVE_TRIP = 'coupleLog.travel.activeTrip.v1';
-const LS_SUB_TAB = 'coupleLog.travel.subTab.v1';
 const LS_SEEDED = 'coupleLog.travel.seeded.v1';
 
 const DAY_MS = 86400000;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const MAX_IMAGE_CHARS = 480000; // data URL 문자 수 상한 (약 350KB 사진)
 
-// ---- 일정 분류 ----
+// ---- 일정 분류 (원래 웹의 lib/constants/itemCategory.ts 와 동일) ----
 const CATEGORIES = [
   { value: 'flight', label: '비행기 이동', icon: '✈️' },
   { value: 'car', label: '차량 이동', icon: '🚗' },
@@ -21,6 +20,13 @@ const CATEGORIES = [
 function categoryInfo(value) {
   return CATEGORIES.find((c) => c.value === value) || null;
 }
+
+// 원래 웹의 표에서 시간을 두 개의 select(시/분, 5분 단위)로 고릅니다.
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+
+// 동선 지도에서 일차마다 다른 색을 씁니다 (원래 웹과 같은 색 목록).
+const DAY_COLORS = ['#0EA5E9', '#F59E0B', '#10B981', '#8B5CF6', '#EF4444', '#EC4899', '#14B8A6', '#F97316'];
 
 // ---- state ----
 // travel = { trips, items, flights, stays, checks, summaries }  (모두 평평한 목록, 각 행에 tripId)
@@ -80,7 +86,6 @@ function saveTravel() {
 
 let travel = loadTravel();
 let activeTripId = localStorage.getItem(LS_ACTIVE_TRIP) || null;
-let activeSubTab = localStorage.getItem(LS_SUB_TAB) || 'itinerary';
 
 /**
  * travel-journal 웹에서 옮겨온 첫 자료를 한 번만 넣습니다.
@@ -121,9 +126,19 @@ function addDaysISO(iso, n) {
 function nightsOf(trip) {
   return Math.round((toUTC(trip.end) - toUTC(trip.start)) / DAY_MS);
 }
-function lengthLabel(trip) {
-  const nights = nightsOf(trip);
-  return nights <= 0 ? '당일치기' : `${nights}박 ${nights + 1}일`;
+// 원래 웹(src/lib/utils/date.ts)과 같은 표기 규칙입니다.
+function formatDisplayDate(iso) {
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${y}.${m}.${d}`;
+}
+function formatMonthDay(iso) {
+  const [, m, d] = iso.split('-');
+  if (!m || !d) return iso;
+  return `${Number(m)}월 ${Number(d)}일`;
+}
+function toKoreanWeekday(iso) {
+  return `${WEEKDAYS[new Date(toUTC(iso)).getUTCDay()]}요일`;
 }
 function tripDates(trip) {
   const out = [];
@@ -131,15 +146,9 @@ function tripDates(trip) {
   for (let i = 0; i <= total; i += 1) out.push(addDaysISO(trip.start, i));
   return out;
 }
-function shortDate(iso) {
-  const [, m, d] = iso.split('-').map(Number);
-  const weekday = WEEKDAYS[new Date(toUTC(iso)).getUTCDay()];
-  return `${m}/${d} (${weekday})`;
-}
-function rangeLabel(trip) {
-  const [, sm, sd] = trip.start.split('-').map(Number);
-  const [, em, ed] = trip.end.split('-').map(Number);
-  return `${sm}/${sd} – ${em}/${ed}`;
+/** [start, end] 구간(양끝 포함)에 date 가 들어가는지. */
+function isDateWithinRange(date, start, end) {
+  return date >= start && date <= end;
 }
 
 function sortedTrips() {
@@ -152,10 +161,6 @@ function setActiveTrip(id) {
   activeTripId = id;
   if (id) localStorage.setItem(LS_ACTIVE_TRIP, id);
   else localStorage.removeItem(LS_ACTIVE_TRIP);
-}
-function setSubTab(tab) {
-  activeSubTab = tab;
-  localStorage.setItem(LS_SUB_TAB, tab);
 }
 
 function itemsOfTrip(tripId) {
@@ -177,17 +182,17 @@ function summaryOf(tripId, day) {
   return travel.summaries.find((s) => s.tripId === tripId && s.day === day) || null;
 }
 
-function subTabCounts(trip) {
-  const checks = checksOfTrip(trip.id);
-  return {
-    itinerary: itemsOfTrip(trip.id).length,
-    flights: flightsOfTrip(trip.id).length,
-    stays: staysOfTrip(trip.id).length,
-    checklist: `${checks.filter((c) => c.checked).length}/${checks.length}`,
-  };
+/** 체크인 당일은 "[체크인] 이름", 체크아웃 당일은 "[체크아웃] 이름"으로. (원래 웹과 동일) */
+function accommodationLabelFor(date, acc) {
+  const isIn = date === acc.checkIn;
+  const isOut = date === acc.checkOut;
+  if (isIn && isOut) return `[체크인·체크아웃] ${acc.name}`;
+  if (isIn) return `[체크인] ${acc.name}`;
+  if (isOut) return `[체크아웃] ${acc.name}`;
+  return acc.name;
 }
 
-/** 구글 지도 딥링크. 별도 API 키 없이 그냥 웹/앱 링크로 엽니다. */
+/** 구글 지도 검색 딥링크 (별도 화면 없이 위치만 열 때 씁니다). */
 function itemMapUrl(item) {
   if (typeof item.lat === 'number' && typeof item.lng === 'number') {
     return `https://www.google.com/maps/search/?api=1&query=${item.lat},${item.lng}`;
@@ -197,57 +202,163 @@ function itemMapUrl(item) {
   }
   return null;
 }
-/** 하루치 동선을 좌표 순서대로 이어 길찾기 링크를 만듭니다. */
-function dayMapUrl(items) {
-  const pts = items.filter((i) => typeof i.lat === 'number' && typeof i.lng === 'number');
-  if (pts.length < 2) return null;
-  const coord = (p) => `${p.lat},${p.lng}`;
-  const params = new URLSearchParams({ api: '1', origin: coord(pts[0]), destination: coord(pts[pts.length - 1]) });
-  const mid = pts.slice(1, -1).slice(0, 8).map(coord).join('|');
-  if (mid) params.set('waypoints', mid);
-  return 'https://www.google.com/maps/dir/?' + params.toString();
+
+function reorderDay(orderedIds) {
+  const now = Date.now();
+  orderedIds.forEach((id, idx) => {
+    const item = travel.items.find((i) => i.id === id);
+    if (item) { item.order = idx; item.updatedAt = now; }
+  });
+  saveTravel();
 }
 
-let toastTimer2 = null;
-function flash(el, msg) {
-  el.textContent = msg;
-  clearTimeout(toastTimer2);
-  toastTimer2 = setTimeout(() => { el.textContent = ''; }, 2200);
-}
+/* ===========================================================
+   렌더링
+   =========================================================== */
 
-// ---- rendering ----
 function renderAll() {
   renderTripTabs();
   renderPanel();
 }
 
+/* ---- 여행 탭 (이름 변경은 탭 안에서 바로, 메뉴는 ⋯) ---- */
 function renderTripTabs() {
   const nav = document.getElementById('tripTabs');
   nav.innerHTML = '';
 
   sortedTrips().forEach((trip) => {
-    const tab = document.createElement('button');
-    tab.type = 'button';
-    tab.className = 'trip-tab' + (trip.id === activeTripId ? ' active' : '');
-
-    const name = document.createElement('span');
-    name.className = 'trip-tab-place';
-    name.textContent = trip.name;
-
-    const meta = document.createElement('span');
-    meta.className = 'trip-tab-meta';
-    meta.textContent = `${rangeLabel(trip)} · ${lengthLabel(trip)}`;
-
-    tab.appendChild(name);
-    tab.appendChild(meta);
-    tab.addEventListener('click', () => {
-      setActiveTrip(trip.id);
-      renderAll();
-    });
-    nav.appendChild(tab);
+    nav.appendChild(buildTripTab(trip));
   });
+
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'add-trip-pill';
+  addBtn.textContent = '+ 새 여행';
+  addBtn.addEventListener('click', () => openModal(buildNewTripDialog()));
+  nav.appendChild(addBtn);
 }
 
+function buildTripTab(trip) {
+  const wrap = document.createElement('div');
+  wrap.style.position = 'relative';
+
+  const tab = document.createElement('button');
+  tab.type = 'button';
+  tab.className = 'trip-tab' + (trip.id === activeTripId ? ' active' : '');
+  tab.style.paddingRight = '30px';
+
+  const name = document.createElement('span');
+  name.className = 'trip-tab-place';
+  name.textContent = trip.name;
+  const meta = document.createElement('span');
+  meta.className = 'trip-tab-meta';
+  meta.textContent = `${formatMonthDay(trip.start)} ~ ${formatMonthDay(trip.end)}`;
+  tab.appendChild(name);
+  tab.appendChild(meta);
+  tab.addEventListener('click', () => { setActiveTrip(trip.id); renderAll(); });
+
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.setAttribute('aria-label', '여행 메뉴');
+  menuBtn.textContent = '⋯';
+  menuBtn.style.cssText = 'position:absolute;top:6px;right:8px;background:none;border:none;font-size:.85rem;cursor:pointer;padding:2px 4px;'
+    + (trip.id === activeTripId ? 'color:#fff;' : 'color:var(--text-faint);');
+
+  const menu = document.createElement('div');
+  menu.className = 'modal-list-item';
+  menu.style.cssText = 'position:absolute;top:100%;left:0;z-index:20;margin-top:4px;display:flex;flex-direction:column;gap:2px;padding:5px;width:auto;min-width:110px;';
+  menu.classList.add('hidden');
+
+  const renameBtn = document.createElement('button');
+  renameBtn.type = 'button';
+  renameBtn.className = 'modal-link-btn';
+  renameBtn.textContent = '이름 변경';
+  renameBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.classList.add('hidden');
+    startInlineRename(wrap, trip);
+  });
+
+  const delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.className = 'modal-link-btn danger';
+  delBtn.textContent = '삭제';
+  delBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    menu.classList.add('hidden');
+    deleteTrip(trip);
+  });
+
+  menu.appendChild(renameBtn);
+  menu.appendChild(delBtn);
+
+  menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.trip-tab-menu-open').forEach((m) => m.classList.add('hidden'));
+    menu.classList.toggle('hidden');
+  });
+  menu.classList.add('trip-tab-menu-open');
+  document.addEventListener('click', () => menu.classList.add('hidden'), { once: false });
+
+  wrap.appendChild(tab);
+  wrap.appendChild(menuBtn);
+  wrap.appendChild(menu);
+  return wrap;
+}
+
+/** 탭을 이름 입력칸으로 바꿔서 그 자리에서 이름을 고칩니다 (원래 웹과 동일). */
+function startInlineRename(wrap, trip) {
+  wrap.innerHTML = '';
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;align-items:center;gap:6px;';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = trip.name;
+  input.className = 'cell-input';
+  input.style.cssText = 'width:140px;padding:8px;font-size:.85rem;';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'modal-link-btn';
+  saveBtn.textContent = '저장';
+  saveBtn.addEventListener('click', () => {
+    const name = input.value.trim();
+    if (!name) { showToast('여행 이름을 입력해주세요.'); return; }
+    trip.name = name;
+    trip.updatedAt = Date.now();
+    saveTravel();
+    renderAll();
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'modal-link-btn';
+  cancelBtn.textContent = '취소';
+  cancelBtn.addEventListener('click', () => renderAll());
+
+  row.appendChild(input);
+  row.appendChild(saveBtn);
+  row.appendChild(cancelBtn);
+  wrap.appendChild(row);
+  input.focus();
+}
+
+function deleteTrip(trip) {
+  if (!window.confirm('이 여행을 삭제할까요? 여행계획표도 함께 삭제됩니다.')) return;
+  const id = trip.id;
+  travel.trips = travel.trips.filter((t) => t.id !== id);
+  travel.items = travel.items.filter((i) => i.tripId !== id);
+  travel.flights = travel.flights.filter((f) => f.tripId !== id);
+  travel.stays = travel.stays.filter((s) => s.tripId !== id);
+  travel.checks = travel.checks.filter((c) => c.tripId !== id);
+  travel.summaries = travel.summaries.filter((s) => s.tripId !== id);
+  saveTravel();
+  setActiveTrip(travel.trips[0] ? sortedTrips()[0].id : null);
+  renderAll();
+}
+
+/* ---- 메인 패널 : 툴바 → 일차요약(읽기전용) → 일정표 ---- */
 function renderPanel() {
   const panel = document.getElementById('tripPanel');
   const empty = document.getElementById('emptyState');
@@ -260,379 +371,582 @@ function renderPanel() {
   }
   empty.classList.add('hidden');
 
-  panel.appendChild(buildTripHead(trip));
-  panel.appendChild(buildSubTabs(trip));
+  panel.appendChild(buildToolbar(trip));
 
-  const body = document.createElement('div');
-  body.id = 'subTabBody';
-  panel.appendChild(body);
+  const summaryStrip = buildSummaryStrip(trip);
+  if (summaryStrip) panel.appendChild(summaryStrip);
 
-  renderSubTabBody(trip);
+  panel.appendChild(buildDayJumpNav(trip));
+  tripDates(trip).forEach((iso, index) => {
+    panel.appendChild(buildDaySection(trip, index + 1, iso));
+  });
 }
 
-function buildTripHead(trip) {
-  const head = document.createElement('section');
-  head.className = 'trip-head';
+function buildToolbar(trip) {
+  const bar = document.createElement('div');
+  bar.className = 'trip-toolbar';
 
-  const top = document.createElement('div');
-  top.className = 'trip-head-top';
+  const make = (label, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toolbar-btn';
+    b.textContent = label;
+    b.addEventListener('click', onClick);
+    return b;
+  };
 
-  const left = document.createElement('div');
-  const name = document.createElement('h2');
-  name.className = 'trip-place';
-  name.textContent = trip.name;
+  bar.appendChild(make('+ 항공편', () => openModal(buildFlightDialog(trip))));
+  bar.appendChild(make('+ 숙소', () => openModal(buildAccommodationDialog(trip))));
+  bar.appendChild(make('체크리스트', () => openModal(buildChecklistDialog(trip))));
+  bar.appendChild(make('🌐 동선', () => openModal(buildRouteMapDialog(trip))));
+  return bar;
+}
 
-  const dates = document.createElement('div');
-  dates.className = 'trip-dates';
-  dates.textContent = `${trip.start} ~ ${trip.end}`;
+/* ---- 일차별 요약 : 읽기 전용, 앱이 만들지 않고 Claude Code 에게 요청해 채웁니다 ---- */
+function buildSummaryStrip(trip) {
+  const summaries = travel.summaries.filter((s) => s.tripId === trip.id).sort((a, b) => a.day - b.day);
+  if (summaries.length === 0) return null;
 
-  left.appendChild(name);
-  left.appendChild(dates);
+  const strip = document.createElement('div');
+  strip.className = 'summary-strip';
+
+  summaries.forEach((s) => {
+    const card = document.createElement('a');
+    card.className = 'summary-card';
+    card.href = `#day-${s.day}`;
+
+    const title = document.createElement('p');
+    title.className = 'summary-card-title';
+    title.textContent = `${s.day}일차 요약`;
+    card.appendChild(title);
+
+    const rows = [
+      { label: '주요 동선', text: s.route },
+      { label: '체크포인트', text: s.points },
+    ];
+    rows.forEach((r) => {
+      const row = document.createElement('div');
+      row.className = 'summary-row';
+      const label = document.createElement('span');
+      label.className = 'summary-label';
+      label.textContent = r.label;
+      const text = document.createElement('p');
+      text.className = 'summary-text';
+      text.textContent = r.text || '-';
+      row.appendChild(label);
+      row.appendChild(text);
+      card.appendChild(row);
+    });
+
+    if (s.cautions) {
+      const row = document.createElement('div');
+      row.className = 'summary-row';
+      const label = document.createElement('span');
+      label.className = 'summary-label caution';
+      label.textContent = '주의사항';
+      const text = document.createElement('p');
+      text.className = 'summary-text caution';
+      text.textContent = s.cautions;
+      row.appendChild(label);
+      row.appendChild(text);
+      card.appendChild(row);
+    }
+
+    strip.appendChild(card);
+  });
+
+  return strip;
+}
+
+function buildDayJumpNav(trip) {
+  const dates = tripDates(trip);
+  const nav = document.createElement('nav');
+  nav.className = 'day-jump-nav';
+  if (dates.length <= 1) nav.classList.add('hidden');
+  dates.forEach((_, index) => {
+    const link = document.createElement('a');
+    link.className = 'day-jump-link';
+    link.href = `#day-${index + 1}`;
+    link.textContent = `${index + 1}일차`;
+    nav.appendChild(link);
+  });
+  return nav;
+}
+
+/* ---- 일차 섹션 (표) ---- */
+function buildDaySection(trip, day, iso, initial) {
+  const section = document.createElement('section');
+  section.className = 'day-section';
+  section.id = `day-${day}`;
+
+  // '수정'/'+ 일정 추가' 로 켠 상태는 표를 통째로 다시 그릴 때(rerenderSection)
+  // 그대로 이어받아야 합니다. 안 그러면 다시 그릴 때마다 읽기 모드로 되돌아갑니다.
+  let manageMode = (initial && initial.manageMode) || false;
+  let creating = (initial && initial.creating) || false;
+
+  function rerenderSection() {
+    const fresh = buildDaySection(trip, day, iso, { manageMode, creating });
+    section.replaceWith(fresh);
+  }
+
+  // ---- 머리말 ----
+  const head = document.createElement('div');
+  head.className = 'day-section-head';
+
+  const titleGroup = document.createElement('div');
+  titleGroup.className = 'day-title-group';
+  const badge = document.createElement('span');
+  badge.className = 'day-badge';
+  badge.textContent = String(day);
+  const titleText = document.createElement('div');
+  titleText.className = 'day-title-text';
+  const title = document.createElement('p');
+  title.className = 'day-title';
+  title.textContent = `${day}일차`;
+  const meta = document.createElement('div');
+  meta.className = 'day-meta';
+  const dateEl = document.createElement('span');
+  dateEl.className = 'day-meta-date';
+  dateEl.textContent = `${formatDisplayDate(iso)} (${toKoreanWeekday(iso)})`;
+  meta.appendChild(dateEl);
+
+  const flightLabel = flightsOfTrip(trip.id)
+    .filter((f) => isDateWithinRange(iso, f.depDate, f.arrDate))
+    .map((f) => `${f.airline} ${f.code}`)
+    .join(', ');
+  if (flightLabel) {
+    const pill = document.createElement('span');
+    pill.className = 'day-pill flight';
+    pill.textContent = `항공편: ${flightLabel}`;
+    meta.appendChild(pill);
+  }
+  const stayLabel = staysOfTrip(trip.id)
+    .filter((s) => isDateWithinRange(iso, s.checkIn, s.checkOut))
+    .map((s) => accommodationLabelFor(iso, s))
+    .join(', ');
+  if (stayLabel) {
+    const pill = document.createElement('span');
+    pill.className = 'day-pill stay';
+    pill.textContent = `숙소: ${stayLabel}`;
+    meta.appendChild(pill);
+  }
+
+  titleText.appendChild(title);
+  titleText.appendChild(meta);
+  titleGroup.appendChild(badge);
+  titleGroup.appendChild(titleText);
 
   const actions = document.createElement('div');
-  actions.className = 'trip-head-actions';
+  actions.className = 'day-head-actions';
 
-  const nameBtn = document.createElement('button');
-  nameBtn.type = 'button';
-  nameBtn.className = 'icon-btn';
-  nameBtn.textContent = '이름';
-  nameBtn.addEventListener('click', () => renameTrip(trip));
-
-  const dateBtn = document.createElement('button');
-  dateBtn.type = 'button';
-  dateBtn.className = 'icon-btn';
-  dateBtn.textContent = '날짜';
-  dateBtn.addEventListener('click', () => editTripDates(trip));
-
-  const delBtn = document.createElement('button');
-  delBtn.type = 'button';
-  delBtn.className = 'icon-btn';
-  delBtn.textContent = '삭제';
-  delBtn.addEventListener('click', () => deleteTrip(trip));
-
-  actions.appendChild(nameBtn);
-  actions.appendChild(dateBtn);
-  actions.appendChild(delBtn);
-
-  top.appendChild(left);
-  top.appendChild(actions);
-
-  const nights = document.createElement('div');
-  nights.className = 'trip-nights';
-  nights.textContent = lengthLabel(trip);
-
-  head.appendChild(top);
-  head.appendChild(nights);
-  return head;
-}
-
-const SUB_TABS = [
-  { key: 'itinerary', label: '일정' },
-  { key: 'flights', label: '항공편' },
-  { key: 'stays', label: '숙소' },
-  { key: 'checklist', label: '체크리스트' },
-];
-
-function buildSubTabs(trip) {
-  const wrap = document.createElement('nav');
-  wrap.className = 'sub-tabs travel-sub-tabs';
-
-  const counts = subTabCounts(trip);
-  SUB_TABS.forEach((info) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'sub-tab' + (info.key === activeSubTab ? ' active' : '');
-
-    const label = document.createElement('span');
-    label.textContent = info.label;
-
-    const count = document.createElement('span');
-    count.className = 'sub-tab-count';
-    count.textContent = String(counts[info.key]);
-
-    btn.appendChild(label);
-    btn.appendChild(count);
-    btn.addEventListener('click', () => {
-      setSubTab(info.key);
-      renderPanel();
-    });
-    wrap.appendChild(btn);
+  const editToggle = document.createElement('button');
+  editToggle.type = 'button';
+  editToggle.className = 'day-btn' + (manageMode ? ' on' : '');
+  editToggle.textContent = manageMode ? '완료' : '수정';
+  editToggle.addEventListener('click', () => {
+    if (manageMode) {
+      saveTravel();
+      manageMode = false;
+    } else {
+      manageMode = true;
+      creating = false;
+    }
+    rerenderSection();
   });
 
-  return wrap;
-}
-
-function renderSubTabBody(trip) {
-  const body = document.getElementById('subTabBody');
-  body.innerHTML = '';
-  if (activeSubTab === 'flights') buildFlights(trip, body);
-  else if (activeSubTab === 'stays') buildStays(trip, body);
-  else if (activeSubTab === 'checklist') buildChecklist(trip, body);
-  else buildItinerary(trip, body);
-}
-
-/* ================= 일정(itinerary) ================= */
-
-function buildItinerary(trip, body) {
-  tripDates(trip).forEach((iso, index) => {
-    const day = index + 1;
-    body.appendChild(buildDayBlock(trip, day, iso));
+  const addToggle = document.createElement('button');
+  addToggle.type = 'button';
+  addToggle.className = 'day-btn';
+  addToggle.textContent = '+ 일정 추가';
+  addToggle.classList.toggle('hidden', creating);
+  addToggle.addEventListener('click', () => {
+    creating = true;
+    rerenderSection();
   });
-}
 
-function buildDayBlock(trip, day, iso) {
-  const block = document.createElement('section');
-  block.className = 'day-block';
+  actions.appendChild(editToggle);
+  actions.appendChild(addToggle);
+  head.appendChild(titleGroup);
+  head.appendChild(actions);
+  section.appendChild(head);
 
-  const items = itemsOfDay(trip.id, day);
+  // ---- 표 ----
+  const scroll = document.createElement('div');
+  scroll.className = 'itinerary-scroll';
+  const table = document.createElement('table');
+  table.className = 'itinerary-table';
 
-  const head = document.createElement('div');
-  head.className = 'day-block-head';
+  const colgroup = document.createElement('colgroup');
+  [60, 150, 90, 75, 75, 70].forEach((w) => {
+    const col = document.createElement('col');
+    col.style.width = `${w}px`;
+    colgroup.appendChild(col);
+  });
+  if (manageMode || creating) {
+    const col = document.createElement('col');
+    col.style.width = '86px';
+    colgroup.appendChild(col);
+  }
+  table.appendChild(colgroup);
 
-  const title = document.createElement('div');
-  title.className = 'day-block-title';
-  const idx = document.createElement('span');
-  idx.className = 'day-index';
-  idx.textContent = `${day}일차`;
-  const date = document.createElement('span');
-  date.className = 'day-date';
-  date.textContent = shortDate(iso);
-  title.appendChild(idx);
-  title.appendChild(date);
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  [['시간', ''], ['일정', ''], ['위치', ''], ['별첨1', 'att1'], ['별첨2', 'att2'], ['별첨3', 'att3']].forEach(([label, cls]) => {
+    const th = document.createElement('th');
+    if (cls) th.className = cls;
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+  if (manageMode || creating) {
+    const th = document.createElement('th');
+    th.textContent = '작업';
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
 
-  const headActions = document.createElement('div');
-  headActions.className = 'day-block-actions';
+  const tbody = document.createElement('tbody');
+  const dayItems = itemsOfDay(trip.id, day);
 
-  const mapUrl = dayMapUrl(items);
-  if (mapUrl) {
-    const mapLink = document.createElement('a');
-    mapLink.className = 'day-map-link';
-    mapLink.href = mapUrl;
-    mapLink.target = '_blank';
-    mapLink.rel = 'noopener';
-    mapLink.textContent = '🗺️ 동선 보기';
-    headActions.appendChild(mapLink);
+  if (dayItems.length === 0 && !creating) {
+    const tr = document.createElement('tr');
+    tr.className = 'empty-row';
+    const td = document.createElement('td');
+    td.colSpan = manageMode ? 7 : 6;
+    td.textContent = '이 날의 일정이 없습니다.';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   }
 
-  const summaryToggle = document.createElement('button');
-  summaryToggle.type = 'button';
-  summaryToggle.className = 'day-summary-toggle';
-  const existingSummary = summaryOf(trip.id, day);
-  const hasSummary = existingSummary && (existingSummary.route || existingSummary.points || existingSummary.cautions);
-  summaryToggle.textContent = hasSummary ? '요약 ●' : '요약 +';
-  headActions.appendChild(summaryToggle);
-
-  head.appendChild(title);
-  head.appendChild(headActions);
-  block.appendChild(head);
-
-  const summaryPanel = buildDaySummaryForm(trip, day);
-  summaryPanel.classList.add('hidden');
-  block.appendChild(summaryPanel);
-  summaryToggle.addEventListener('click', () => summaryPanel.classList.toggle('hidden'));
-
-  const list = document.createElement('div');
-  list.className = 'item-list';
-  items.forEach((item) => list.appendChild(buildItemRow(trip, item)));
-  block.appendChild(list);
-
-  const addBtn = document.createElement('button');
-  addBtn.type = 'button';
-  addBtn.className = 'btn btn-outline small day-add-btn';
-  addBtn.textContent = '+ 이 날에 일정 추가';
-  const formSlot = document.createElement('div');
-  addBtn.addEventListener('click', () => {
-    formSlot.innerHTML = '';
-    formSlot.appendChild(buildItemForm(trip, day, null, () => { formSlot.innerHTML = ''; }));
+  dayItems.forEach((item) => {
+    tbody.appendChild(
+      manageMode
+        ? buildEditableRow(trip, day, item, rerenderSection)
+        : buildReadRow(item)
+    );
   });
-  block.appendChild(addBtn);
-  block.appendChild(formSlot);
 
-  return block;
+  if (creating) {
+    tbody.appendChild(buildNewItemRow(trip, day, () => { creating = false; rerenderSection(); }));
+  }
+
+  table.appendChild(tbody);
+  scroll.appendChild(table);
+  section.appendChild(scroll);
+
+  return section;
 }
 
-function buildDaySummaryForm(trip, day) {
+function buildReadRow(item) {
+  const tr = document.createElement('tr');
+
+  const timeTd = document.createElement('td');
+  timeTd.textContent = item.time || '-';
+  tr.appendChild(timeTd);
+
+  const schedTd = document.createElement('td');
+  if (item.schedule) {
+    const cat = categoryInfo(item.category);
+    if (cat) {
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'item-cat-icon';
+      iconSpan.textContent = cat.icon;
+      schedTd.appendChild(iconSpan);
+    }
+    schedTd.appendChild(document.createTextNode(item.schedule));
+  } else {
+    const span = document.createElement('span');
+    span.className = 'no-schedule';
+    span.textContent = '(미정)';
+    schedTd.appendChild(span);
+  }
+  tr.appendChild(schedTd);
+
+  const locTd = document.createElement('td');
+  locTd.textContent = item.location || '-';
+  tr.appendChild(locTd);
+
+  [1, 2, 3].forEach((slot) => {
+    const att = item.att[slot - 1];
+    const td = document.createElement('td');
+    if (att.text) {
+      const badge = document.createElement('span');
+      badge.className = `att-badge att${slot}`;
+      badge.textContent = att.text;
+      td.appendChild(badge);
+    }
+    if (att.image) {
+      const img = document.createElement('img');
+      img.className = 'att-thumb';
+      img.src = att.image;
+      img.alt = att.text || '첨부 사진';
+      img.addEventListener('click', () => openLightbox(att.image));
+      td.appendChild(img);
+    }
+    if (!att.text && !att.image) td.textContent = '-';
+    tr.appendChild(td);
+  });
+
+  return tr;
+}
+
+function buildTimeSelectPair(value, onChange) {
   const wrap = document.createElement('div');
-  wrap.className = 'day-summary-form';
+  wrap.className = 'time-select-pair';
+  const [h, m] = value ? value.split(':') : ['', ''];
 
-  const existing = summaryOf(trip.id, day);
-  const fields = [
-    { key: 'route', label: '주요 동선', placeholder: '오늘 하루 어떻게 움직이는지' },
-    { key: 'points', label: '체크포인트', placeholder: '놓치면 안 되는 시간/장소' },
-    { key: 'cautions', label: '주의사항', placeholder: '조심할 것' },
-  ];
+  const hourSel = document.createElement('select');
+  hourSel.className = 'time-select';
+  hourSel.appendChild(new Option('--', ''));
+  HOURS.forEach((hh) => hourSel.appendChild(new Option(`${hh}시`, hh)));
+  hourSel.value = h || '';
 
-  function currentSummary() {
-    return summaryOf(trip.id, day);
-  }
+  const minSel = document.createElement('select');
+  minSel.className = 'time-select';
+  MINUTES.forEach((mm) => minSel.appendChild(new Option(`${mm}분`, mm)));
+  minSel.value = m || '00';
+  minSel.disabled = !hourSel.value;
 
-  fields.forEach((f) => {
-    const label = document.createElement('label');
-    label.className = 'day-summary-label';
-    label.textContent = f.label;
-
-    const textarea = document.createElement('textarea');
-    textarea.className = 'day-summary-input';
-    textarea.placeholder = f.placeholder;
-    textarea.value = existing ? existing[f.key] || '' : '';
-    textarea.rows = 2;
-
-    let saveTimer = null;
-    textarea.addEventListener('input', () => {
-      clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => {
-        let row = currentSummary();
-        if (!row) {
-          row = { id: newId(), tripId: trip.id, day, route: '', points: '', cautions: '', updatedAt: Date.now() };
-          travel.summaries.push(row);
-        }
-        row[f.key] = textarea.value;
-        row.updatedAt = Date.now();
-        saveTravel();
-      }, 500);
-    });
-
-    wrap.appendChild(label);
-    wrap.appendChild(textarea);
+  hourSel.addEventListener('change', () => {
+    minSel.disabled = !hourSel.value;
+    onChange(hourSel.value ? `${hourSel.value}:${minSel.value || '00'}` : '');
+  });
+  minSel.addEventListener('change', () => {
+    if (!hourSel.value) return;
+    onChange(`${hourSel.value}:${minSel.value}`);
   });
 
-  return wrap;
+  wrap.appendChild(hourSel);
+  wrap.appendChild(minSel);
+  return { el: wrap, get: () => (hourSel.value ? `${hourSel.value}:${minSel.value || '00'}` : '') };
 }
 
-function buildItemRow(trip, item) {
+/** 표 안에서 시간/분류+일정/위치/별첨 3칸을 채우는 입력 셀들을 만듭니다. */
+function buildFieldCells(values, options) {
+  const cells = [];
+
+  const timeTd = document.createElement('td');
+  const timeCtl = buildTimeSelectPair(values.time, (v) => { values.time = v; });
+  timeTd.appendChild(timeCtl.el);
+  cells.push(timeTd);
+
+  const schedTd = document.createElement('td');
+  const schedWrap = document.createElement('div');
+  schedWrap.className = 'cat-schedule';
+  const catSel = document.createElement('select');
+  catSel.className = 'cat-select';
+  catSel.appendChild(new Option('-', ''));
+  CATEGORIES.forEach((c) => catSel.appendChild(new Option(`${c.icon}`, c.value)));
+  catSel.value = values.category || '';
+  catSel.title = '분류';
+  catSel.addEventListener('change', () => { values.category = catSel.value; });
+  const schedInput = document.createElement('input');
+  schedInput.type = 'text';
+  schedInput.className = 'cell-input';
+  schedInput.value = values.schedule || '';
+  schedInput.addEventListener('input', () => { values.schedule = schedInput.value; });
+  schedWrap.appendChild(catSel);
+  schedWrap.appendChild(schedInput);
+  schedTd.appendChild(schedWrap);
+  cells.push(schedTd);
+
+  const locTd = document.createElement('td');
+  const locInput = document.createElement('input');
+  locInput.type = 'text';
+  locInput.className = 'cell-input';
+  locInput.value = values.location || '';
+  locInput.addEventListener('input', () => { values.location = locInput.value; });
+  locTd.appendChild(locInput);
+  cells.push(locTd);
+
+  [1, 2, 3].forEach((slot) => {
+    const key = `att${slot}`;
+    const td = document.createElement('td');
+    const wrap = document.createElement('div');
+    wrap.className = 'att-edit';
+
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.className = `cell-input att${slot}`;
+    textInput.placeholder = options.allowImages ? '텍스트 또는 사진' : '메모';
+    textInput.value = values.att[slot - 1].text || '';
+    textInput.addEventListener('input', () => { values.att[slot - 1].text = textInput.value; });
+    wrap.appendChild(textInput);
+
+    if (options.allowImages) {
+      const fileInput = document.createElement('input');
+      fileInput.type = 'file';
+      fileInput.accept = 'image/*';
+      fileInput.style.cssText = 'font-size:.62rem;';
+
+      const attActions = document.createElement('div');
+      attActions.className = 'att-edit-actions';
+
+      const preview = document.createElement('img');
+      preview.className = 'att-thumb';
+      preview.classList.toggle('hidden', !values.att[slot - 1].image);
+      if (values.att[slot - 1].image) preview.src = values.att[slot - 1].image;
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'att-remove-btn';
+      removeBtn.textContent = '제거';
+      removeBtn.classList.toggle('hidden', !values.att[slot - 1].image);
+      removeBtn.addEventListener('click', () => {
+        values.att[slot - 1].image = '';
+        preview.classList.add('hidden');
+        removeBtn.classList.add('hidden');
+      });
+
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        readImageCompressed(file)
+          .then((dataUrl) => {
+            values.att[slot - 1].image = dataUrl;
+            preview.src = dataUrl;
+            preview.classList.remove('hidden');
+            removeBtn.classList.remove('hidden');
+          })
+          .catch((err) => showToast(err.message))
+          .finally(() => { fileInput.value = ''; });
+      });
+
+      attActions.appendChild(preview);
+      attActions.appendChild(removeBtn);
+      wrap.appendChild(fileInput);
+      wrap.appendChild(attActions);
+    }
+
+    td.appendChild(wrap);
+    cells.push(td);
+  });
+
+  return cells;
+}
+
+function buildEditableRow(trip, day, item, onDone) {
+  const tr = document.createElement('tr');
+  tr.className = 'item-tr editing';
+  tr.dataset.id = item.id;
+
+  const values = {
+    time: item.time, category: item.category, schedule: item.schedule, location: item.location,
+    att: item.att.map((a) => ({ text: a.text, image: a.image })),
+  };
+
+  buildFieldCells(values, { allowImages: true }).forEach((td) => tr.appendChild(td));
+
+  const actionTd = document.createElement('td');
   const row = document.createElement('div');
-  row.className = 'item-row';
-  row.dataset.id = item.id;
+  row.className = 'row-actions';
 
   const handle = document.createElement('span');
-  handle.className = 'item-drag';
+  handle.className = 'row-drag';
   handle.textContent = '⠿';
-  handle.setAttribute('aria-label', '눌러서 순서 바꾸기');
-  attachItemDrag(handle, item.id, trip.id, item.day);
-
-  const bodyEl = document.createElement('div');
-  bodyEl.className = 'item-body';
-
-  const topLine = document.createElement('div');
-  topLine.className = 'item-top';
-
-  if (item.time) {
-    const time = document.createElement('span');
-    time.className = 'item-time';
-    time.textContent = item.time;
-    topLine.appendChild(time);
-  }
-
-  const cat = categoryInfo(item.category);
-  if (cat) {
-    const catEl = document.createElement('span');
-    catEl.className = 'item-cat';
-    catEl.textContent = `${cat.icon} ${cat.label}`;
-    topLine.appendChild(catEl);
-  }
-  bodyEl.appendChild(topLine);
-
-  const schedule = document.createElement('p');
-  schedule.className = 'item-schedule';
-  schedule.textContent = item.schedule;
-  bodyEl.appendChild(schedule);
-
-  const mapUrl = itemMapUrl(item);
-  if (item.location || mapUrl) {
-    const loc = document.createElement(mapUrl ? 'a' : 'span');
-    loc.className = 'item-location';
-    loc.textContent = `📍 ${item.location || '지도에서 보기'}`;
-    if (mapUrl) { loc.href = mapUrl; loc.target = '_blank'; loc.rel = 'noopener'; }
-    bodyEl.appendChild(loc);
-  }
-
-  const atts = item.att.filter((a) => a.text || a.image);
-  if (atts.length) {
-    const attWrap = document.createElement('div');
-    attWrap.className = 'item-atts';
-    atts.forEach((a) => {
-      if (a.image) {
-        const thumb = document.createElement('img');
-        thumb.className = 'att-thumb';
-        thumb.src = a.image;
-        thumb.alt = a.text || '첨부 사진';
-        thumb.addEventListener('click', () => openLightbox(a.image));
-        attWrap.appendChild(thumb);
-      }
-      if (a.text) {
-        const chip = document.createElement('span');
-        chip.className = 'att-chip';
-        chip.textContent = a.text;
-        attWrap.appendChild(chip);
-      }
-    });
-    bodyEl.appendChild(attWrap);
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'item-actions';
-
-  const formSlot = document.createElement('div');
-
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.className = 'gear-act gear-edit';
-  editBtn.textContent = '✎';
-  editBtn.setAttribute('aria-label', '일정 수정');
-  editBtn.addEventListener('click', () => {
-    if (formSlot.childElementCount) { formSlot.innerHTML = ''; return; }
-    formSlot.appendChild(buildItemForm(trip, item.day, item, () => { formSlot.innerHTML = ''; }));
-  });
+  handle.title = '드래그해서 순서 변경';
+  attachRowDrag(handle, item.id, trip.id, day, onDone);
 
   const delBtn = document.createElement('button');
   delBtn.type = 'button';
-  delBtn.className = 'gear-act gear-del';
-  delBtn.textContent = '✕';
-  delBtn.setAttribute('aria-label', '일정 삭제');
+  delBtn.className = 'row-del-btn';
+  delBtn.textContent = '삭제';
   delBtn.addEventListener('click', () => {
+    if (!window.confirm('이 일정을 삭제할까요?')) return;
     travel.items = travel.items.filter((i) => i.id !== item.id);
     saveTravel();
-    renderPanel();
+    onDone();
   });
 
-  actions.appendChild(editBtn);
-  actions.appendChild(delBtn);
-
   row.appendChild(handle);
-  row.appendChild(bodyEl);
-  row.appendChild(actions);
+  row.appendChild(delBtn);
+  actionTd.appendChild(row);
+  tr.appendChild(actionTd);
 
+  // 편집 중인 값은 '완료'를 누를 때(day-section 의 editToggle) saveTravel() 로 한꺼번에 저장되도록,
+  // item 객체에 실시간으로 반영해 둡니다 (원래 웹의 일괄 저장과 같은 느낌을 내되, 구조는 단순화).
+  const applyLive = () => {
+    item.time = values.time; item.category = values.category;
+    item.schedule = values.schedule; item.location = values.location;
+    item.att = values.att.map((a) => ({ text: a.text, image: a.image }));
+    item.updatedAt = Date.now();
+  };
+  tr.addEventListener('input', applyLive);
+  tr.addEventListener('change', applyLive);
+
+  return tr;
+}
+
+function buildNewItemRow(trip, day, onDone) {
+  const tr = document.createElement('tr');
+  tr.className = 'item-tr editing';
+
+  const values = { time: '', category: '', schedule: '', location: '', att: [{ text: '', image: '' }, { text: '', image: '' }, { text: '', image: '' }] };
+  buildFieldCells(values, { allowImages: false }).forEach((td) => tr.appendChild(td));
+
+  const actionTd = document.createElement('td');
   const wrap = document.createElement('div');
-  wrap.appendChild(row);
-  wrap.appendChild(formSlot);
-  return wrap;
+  wrap.className = 'new-row-actions';
+  const btns = document.createElement('div');
+  btns.className = 'new-row-btns';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'row-save-btn';
+  saveBtn.textContent = '저장';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'row-cancel-btn';
+  cancelBtn.textContent = '취소';
+  cancelBtn.addEventListener('click', onDone);
+
+  const err = document.createElement('p');
+  err.className = 'row-error hidden';
+
+  saveBtn.addEventListener('click', () => {
+    const siblings = itemsOfDay(trip.id, day);
+    travel.items.push({
+      id: newId(), tripId: trip.id, day,
+      date: addDaysISO(trip.start, day - 1),
+      time: values.time, category: values.category, schedule: values.schedule, location: values.location,
+      lat: null, lng: null,
+      att: values.att.map((a) => ({ text: a.text, image: a.image })),
+      order: siblings.length,
+      updatedAt: Date.now(),
+    });
+    saveTravel();
+    onDone();
+  });
+
+  btns.appendChild(saveBtn);
+  btns.appendChild(cancelBtn);
+  wrap.appendChild(btns);
+  wrap.appendChild(err);
+  actionTd.appendChild(wrap);
+  tr.appendChild(actionTd);
+  return tr;
 }
 
 /**
- * 손가락으로 눌러 일정 순서를 바꿉니다.
- * 옮기는 줄 자체는 손가락을 따라 움직이고(transform), 나머지 줄에는
- * 어디에 놓일지 테두리로 표시합니다. 손을 떼면 그 자리로 순서를 바꿉니다.
+ * 손가락으로 눌러 일정 순서를 바꿉니다. (수정 모드의 표 안에서만 동작)
+ * 옮기는 행은 손가락을 따라 움직이고(그림자만), 나머지 행에는 위/아래
+ * 테두리로 놓일 자리를 표시합니다.
  */
-function attachItemDrag(handle, itemId, tripId, day) {
+function attachRowDrag(handle, itemId, tripId, day, onReordered) {
   handle.addEventListener('pointerdown', (event) => {
     if (event.button) return;
     event.preventDefault();
 
-    const row = handle.closest('.item-row');
-    // 줄마다 '수정 폼 자리'와 한 덩어리로 감싸 놓아서(wrap), row 의 진짜
-    // 부모는 wrap 이고 그 wrap 의 부모가 이 날의 .item-list 입니다.
-    const list = row.parentElement.parentElement;
-    const startY = event.clientY;
+    const row = handle.closest('tr');
+    const tbody = row.parentElement;
     let target = null; // { id, before }
 
     function siblingRows() {
-      return Array.from(list.querySelectorAll('.item-row')).filter((el) => el !== row);
+      return Array.from(tbody.querySelectorAll('tr[data-id]')).filter((el) => el !== row);
     }
 
     function onMove(e) {
       row.classList.add('dragging');
-      row.style.transform = `translateY(${e.clientY - startY}px)`;
-
       let found = null;
       const sibs = siblingRows();
       for (const sib of sibs) {
@@ -654,7 +968,6 @@ function attachItemDrag(handle, itemId, tripId, day) {
       handle.removeEventListener('pointerup', onUp);
       handle.removeEventListener('pointercancel', onCancel);
       row.classList.remove('dragging');
-      row.style.transform = '';
       siblingRows().forEach((s) => s.classList.remove('drop-above', 'drop-below'));
     }
 
@@ -667,7 +980,9 @@ function attachItemDrag(handle, itemId, tripId, day) {
         reorderDay(ids);
       }
       cleanup();
-      renderPanel();
+      // 이 날 표만 다시 그립니다. 전체를 다시 그리면(renderPanel) 지금 켜 둔
+      // 수정 모드가 풀려 버립니다 — 원래 웹도 정렬 중엔 수정 모드가 유지됩니다.
+      onReordered();
     }
     function onCancel() { cleanup(); }
 
@@ -678,255 +993,10 @@ function attachItemDrag(handle, itemId, tripId, day) {
   });
 }
 
-function reorderDay(orderedIds) {
-  const now = Date.now();
-  orderedIds.forEach((id, idx) => {
-    const item = travel.items.find((i) => i.id === id);
-    if (item) { item.order = idx; item.updatedAt = now; }
-  });
-  saveTravel();
-}
+/* ===========================================================
+   사진 압축 · 라이트박스
+   =========================================================== */
 
-/** 일정 추가/수정 폼. existing 이 없으면 새로 만들고, 있으면 그 일정을 고칩니다. */
-function buildItemForm(trip, day, existing, onClose) {
-  const form = document.createElement('form');
-  form.className = 'item-form';
-
-  const row1 = document.createElement('div');
-  row1.className = 'item-form-row';
-
-  const timeField = document.createElement('label');
-  timeField.className = 'field';
-  timeField.innerHTML = '<span class="field-label">시간 (선택)</span>';
-  const timeInput = document.createElement('input');
-  timeInput.type = 'time';
-  timeInput.value = existing ? existing.time : '';
-  timeField.appendChild(timeInput);
-
-  const catField = document.createElement('label');
-  catField.className = 'field';
-  catField.innerHTML = '<span class="field-label">분류 (선택)</span>';
-  const catSelect = document.createElement('select');
-  catSelect.className = 'item-cat-select';
-  const blankOpt = document.createElement('option');
-  blankOpt.value = '';
-  blankOpt.textContent = '선택 안 함';
-  catSelect.appendChild(blankOpt);
-  CATEGORIES.forEach((c) => {
-    const opt = document.createElement('option');
-    opt.value = c.value;
-    opt.textContent = `${c.icon} ${c.label}`;
-    if (existing && existing.category === c.value) opt.selected = true;
-    catSelect.appendChild(opt);
-  });
-  catField.appendChild(catSelect);
-
-  row1.appendChild(timeField);
-  row1.appendChild(catField);
-  form.appendChild(row1);
-
-  const scheduleField = document.createElement('label');
-  scheduleField.className = 'field';
-  scheduleField.innerHTML = '<span class="field-label">일정 내용</span>';
-  const scheduleInput = document.createElement('textarea');
-  scheduleInput.className = 'item-form-textarea';
-  scheduleInput.rows = 2;
-  scheduleInput.required = true;
-  scheduleInput.value = existing ? existing.schedule : '';
-  scheduleField.appendChild(scheduleInput);
-  form.appendChild(scheduleField);
-
-  const placeField = document.createElement('label');
-  placeField.className = 'field';
-  placeField.innerHTML = '<span class="field-label">장소 (선택)</span>';
-  const placeInput = document.createElement('input');
-  placeInput.type = 'text';
-  placeInput.maxLength = 80;
-  placeInput.value = existing ? existing.location : '';
-  placeField.appendChild(placeInput);
-  form.appendChild(placeField);
-
-  // 좌표 (선택) — 동선 보기에 쓰입니다. 접어 두고 필요할 때만 폅니다.
-  const coordToggle = document.createElement('button');
-  coordToggle.type = 'button';
-  coordToggle.className = 'coord-toggle';
-  const hasCoord = existing && typeof existing.lat === 'number';
-  coordToggle.textContent = hasCoord ? '좌표 넣음 (누르면 접기/펴기)' : '좌표 직접 입력 (선택, 동선 보기용)';
-  const coordRow = document.createElement('div');
-  coordRow.className = 'item-form-row';
-  coordRow.classList.toggle('hidden', !hasCoord);
-
-  const latField = document.createElement('label');
-  latField.className = 'field';
-  latField.innerHTML = '<span class="field-label">위도</span>';
-  const latInput = document.createElement('input');
-  latInput.type = 'number';
-  latInput.step = 'any';
-  latInput.value = existing && typeof existing.lat === 'number' ? existing.lat : '';
-  latField.appendChild(latInput);
-
-  const lngField = document.createElement('label');
-  lngField.className = 'field';
-  lngField.innerHTML = '<span class="field-label">경도</span>';
-  const lngInput = document.createElement('input');
-  lngInput.type = 'number';
-  lngInput.step = 'any';
-  lngInput.value = existing && typeof existing.lng === 'number' ? existing.lng : '';
-  lngField.appendChild(lngInput);
-
-  coordRow.appendChild(latField);
-  coordRow.appendChild(lngField);
-  coordToggle.addEventListener('click', () => coordRow.classList.toggle('hidden'));
-  form.appendChild(coordToggle);
-  form.appendChild(coordRow);
-
-  // 첨부 1~3
-  const attInputs = [];
-  for (let slot = 0; slot < 3; slot += 1) {
-    const existingAtt = existing ? existing.att[slot] : { text: '', image: '' };
-    attInputs.push(buildAttachmentField(slot, existingAtt, form));
-  }
-
-  const errorMsg = document.createElement('p');
-  errorMsg.className = 'item-form-error hidden';
-  form.appendChild(errorMsg);
-
-  const btnRow = document.createElement('div');
-  btnRow.className = 'item-form-row';
-  const saveBtn = document.createElement('button');
-  saveBtn.type = 'submit';
-  saveBtn.className = 'btn btn-primary small';
-  saveBtn.textContent = existing ? '고치기' : '추가하기';
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'btn btn-outline small';
-  cancelBtn.textContent = '취소';
-  cancelBtn.addEventListener('click', () => onClose());
-  btnRow.appendChild(saveBtn);
-  btnRow.appendChild(cancelBtn);
-  form.appendChild(btnRow);
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const schedule = scheduleInput.value.trim();
-    if (!schedule) { errorMsg.textContent = '일정 내용을 적어 주세요'; errorMsg.classList.remove('hidden'); return; }
-
-    const lat = latInput.value.trim() ? Number(latInput.value) : null;
-    const lng = lngInput.value.trim() ? Number(lngInput.value) : null;
-
-    const att = attInputs.map((a) => ({ text: a.textInput.value.trim(), image: a.currentImage }));
-
-    const now = Date.now();
-    if (existing) {
-      Object.assign(existing, {
-        time: timeInput.value,
-        category: catSelect.value,
-        schedule,
-        location: placeInput.value.trim(),
-        lat, lng, att,
-        updatedAt: now,
-      });
-    } else {
-      const siblings = itemsOfDay(trip.id, day);
-      travel.items.push({
-        id: newId(), tripId: trip.id, day,
-        date: addDaysISO(trip.start, day - 1),
-        time: timeInput.value,
-        category: catSelect.value,
-        schedule,
-        location: placeInput.value.trim(),
-        lat, lng, att,
-        order: siblings.length,
-        updatedAt: now,
-      });
-    }
-    saveTravel();
-    onClose();
-    renderPanel();
-  });
-
-  return form;
-}
-
-function buildAttachmentField(slot, existingAtt, form) {
-  const wrap = document.createElement('div');
-  wrap.className = 'att-field';
-
-  const label = document.createElement('span');
-  label.className = 'field-label';
-  label.textContent = `첨부 ${slot + 1} (선택)`;
-  wrap.appendChild(label);
-
-  const textInput = document.createElement('input');
-  textInput.type = 'text';
-  textInput.placeholder = '메모 (예: 예약 확인서)';
-  textInput.maxLength = 60;
-  textInput.value = existingAtt.text || '';
-  wrap.appendChild(textInput);
-
-  const fileRow = document.createElement('div');
-  fileRow.className = 'att-file-row';
-
-  const preview = document.createElement('img');
-  preview.className = 'att-thumb att-thumb-editing';
-  preview.classList.toggle('hidden', !existingAtt.image);
-  if (existingAtt.image) preview.src = existingAtt.image;
-
-  const fileInput = document.createElement('input');
-  fileInput.type = 'file';
-  fileInput.accept = 'image/*';
-
-  const removeBtn = document.createElement('button');
-  removeBtn.type = 'button';
-  removeBtn.className = 'gear-act gear-del';
-  removeBtn.textContent = '✕';
-  removeBtn.classList.toggle('hidden', !existingAtt.image);
-  removeBtn.setAttribute('aria-label', `첨부 ${slot + 1} 사진 지우기`);
-
-  const state = { currentImage: existingAtt.image || '', textInput };
-
-  fileInput.addEventListener('change', () => {
-    const file = fileInput.files && fileInput.files[0];
-    if (!file) return;
-    readImageCompressed(file)
-      .then((dataUrl) => {
-        state.currentImage = dataUrl;
-        preview.src = dataUrl;
-        preview.classList.remove('hidden');
-        removeBtn.classList.remove('hidden');
-      })
-      .catch((err) => { flashFormError(form, err.message); })
-      .finally(() => { fileInput.value = ''; });
-  });
-
-  removeBtn.addEventListener('click', () => {
-    state.currentImage = '';
-    preview.src = '';
-    preview.classList.add('hidden');
-    removeBtn.classList.add('hidden');
-  });
-
-  fileRow.appendChild(preview);
-  fileRow.appendChild(fileInput);
-  fileRow.appendChild(removeBtn);
-  wrap.appendChild(fileRow);
-
-  form.appendChild(wrap);
-  return state;
-}
-
-function flashFormError(form, message) {
-  const el = form.querySelector('.item-form-error');
-  if (!el) return;
-  el.textContent = message;
-  el.classList.remove('hidden');
-}
-
-/**
- * 사진 파일을 읽어 적당한 크기로 줄인 JPEG data URL 로 바꿉니다.
- * 업로드 서버가 없는 정적 앱이라, 기록 자체(JSON)에 사진을 함께 담아
- * 저장·동기화합니다. 그래서 너무 큰 사진은 품질을 낮춰서라도 줄입니다.
- */
 function readImageCompressed(file) {
   return new Promise((resolve, reject) => {
     if (!file.type || file.type.indexOf('image/') !== 0) {
@@ -979,469 +1049,737 @@ function closeLightbox() {
   if (box) box.classList.add('hidden');
 }
 
-/* ================= 항공편 ================= */
+/* ===========================================================
+   모달 대화상자 공통
+   =========================================================== */
 
-function buildFlights(trip, body) {
-  const addWrap = document.createElement('div');
-  const addBtn = document.createElement('button');
-  addBtn.type = 'button';
-  addBtn.className = 'btn btn-primary small';
-  addBtn.textContent = '+ 항공편 추가';
-  const formSlot = document.createElement('div');
-  addBtn.addEventListener('click', () => {
-    formSlot.innerHTML = '';
-    formSlot.appendChild(buildFlightForm(trip, null, () => { formSlot.innerHTML = ''; }));
-  });
-  addWrap.appendChild(addBtn);
-  addWrap.appendChild(formSlot);
-  body.appendChild(addWrap);
-
-  const list = flightsOfTrip(trip.id);
-  if (list.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'list-empty';
-    empty.textContent = '아직 등록된 항공편이 없어요.';
-    body.appendChild(empty);
-    return;
-  }
-
-  list.forEach((flight) => {
-    const rowWrap = document.createElement('div');
-    const row = document.createElement('div');
-    row.className = 'flight-row';
-
-    const info = document.createElement('div');
-    info.className = 'flight-info';
-    const line1 = document.createElement('div');
-    line1.className = 'flight-airline';
-    line1.textContent = `${flight.airline} · ${flight.code}`;
-    const line2 = document.createElement('div');
-    line2.className = 'flight-dates';
-    line2.textContent = flight.depDate === flight.arrDate
-      ? flight.depDate
-      : `${flight.depDate} → ${flight.arrDate}`;
-    info.appendChild(line1);
-    info.appendChild(line2);
-
-    const actions = document.createElement('div');
-    actions.className = 'item-actions';
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'gear-act gear-edit';
-    editBtn.textContent = '✎';
-    const editSlot = document.createElement('div');
-    editBtn.addEventListener('click', () => {
-      if (editSlot.childElementCount) { editSlot.innerHTML = ''; return; }
-      editSlot.appendChild(buildFlightForm(trip, flight, () => { editSlot.innerHTML = ''; }));
-    });
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.className = 'gear-act gear-del';
-    delBtn.textContent = '✕';
-    delBtn.addEventListener('click', () => {
-      travel.flights = travel.flights.filter((f) => f.id !== flight.id);
-      saveTravel();
-      renderPanel();
-    });
-    actions.appendChild(editBtn);
-    actions.appendChild(delBtn);
-
-    row.appendChild(info);
-    row.appendChild(actions);
-    rowWrap.appendChild(row);
-    rowWrap.appendChild(editSlot);
-    body.appendChild(rowWrap);
-  });
+function openModal(cardEl) {
+  closeModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'activeModal';
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  overlay.appendChild(cardEl);
+  document.body.appendChild(overlay);
+}
+function closeModal() {
+  const existing = document.getElementById('activeModal');
+  if (existing) existing.remove();
 }
 
-function buildFlightForm(trip, existing, onClose) {
-  const form = document.createElement('form');
-  form.className = 'item-form';
+function modalHeader(card, title, sub) {
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'modal-close-x';
+  closeBtn.textContent = '✕';
+  closeBtn.setAttribute('aria-label', '닫기');
+  closeBtn.addEventListener('click', closeModal);
+  card.appendChild(closeBtn);
 
-  const row1 = document.createElement('div');
-  row1.className = 'item-form-row';
-  const depField = document.createElement('label');
-  depField.className = 'field';
-  depField.innerHTML = '<span class="field-label">출발일</span>';
-  const depInput = document.createElement('input');
-  depInput.type = 'date';
-  depInput.required = true;
-  depInput.value = existing ? existing.depDate : trip.start;
-  depField.appendChild(depInput);
+  const h2 = document.createElement('h2');
+  h2.className = 'modal-title';
+  h2.textContent = title;
+  card.appendChild(h2);
 
-  const arrField = document.createElement('label');
-  arrField.className = 'field';
-  arrField.innerHTML = '<span class="field-label">도착일</span>';
-  const arrInput = document.createElement('input');
-  arrInput.type = 'date';
-  arrInput.required = true;
-  arrInput.value = existing ? existing.arrDate : trip.start;
-  arrField.appendChild(arrInput);
-  row1.appendChild(depField);
-  row1.appendChild(arrField);
-  form.appendChild(row1);
+  if (sub) {
+    const p = document.createElement('p');
+    p.className = 'modal-sub';
+    p.textContent = sub;
+    card.appendChild(p);
+  }
+}
 
-  const airlineField = document.createElement('label');
-  airlineField.className = 'field';
-  airlineField.innerHTML = '<span class="field-label">항공사</span>';
-  const airlineInput = document.createElement('input');
-  airlineInput.type = 'text';
-  airlineInput.required = true;
-  airlineInput.maxLength = 40;
-  airlineInput.value = existing ? existing.airline : '';
-  airlineField.appendChild(airlineInput);
-  form.appendChild(airlineField);
+/* ---- 새 여행 만들기 ---- */
+function buildNewTripDialog() {
+  const card = document.createElement('div');
+  card.className = 'modal-card';
+  modalHeader(card, '새 여행 만들기', '여행 기간을 정하면 날짜별로 빈 일정표가 자동으로 만들어집니다.');
 
-  const codeField = document.createElement('label');
-  codeField.className = 'field';
-  codeField.innerHTML = '<span class="field-label">편명 / 구간</span>';
-  const codeInput = document.createElement('input');
-  codeInput.type = 'text';
-  codeInput.required = true;
-  codeInput.maxLength = 60;
-  codeInput.placeholder = '예: QR859 (인천-도하)';
-  codeInput.value = existing ? existing.code : '';
-  codeField.appendChild(codeInput);
-  form.appendChild(codeField);
+  const body = document.createElement('div');
+  body.className = 'modal-body';
 
-  const btnRow = document.createElement('div');
-  btnRow.className = 'item-form-row';
-  const saveBtn = document.createElement('button');
-  saveBtn.type = 'submit';
-  saveBtn.className = 'btn btn-primary small';
-  saveBtn.textContent = existing ? '고치기' : '추가하기';
+  const nameField = labeledField('여행 이름');
+  nameField.input.placeholder = '예: 오사카 2026';
+  nameField.input.maxLength = 40;
+
+  const dateRow = document.createElement('div');
+  dateRow.className = 'field-row';
+  const startField = labeledField('시작일', 'date');
+  const endField = labeledField('종료일', 'date');
+  dateRow.appendChild(startField.wrap);
+  dateRow.appendChild(endField.wrap);
+
+  const today = todayISO();
+  startField.input.value = today;
+  endField.input.value = today;
+  startField.input.addEventListener('change', () => { endField.input.min = startField.input.value; });
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'modal-error hidden';
+
+  body.appendChild(nameField.wrap);
+  body.appendChild(dateRow);
+  body.appendChild(errorEl);
+  card.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
   const cancelBtn = document.createElement('button');
   cancelBtn.type = 'button';
   cancelBtn.className = 'btn btn-outline small';
   cancelBtn.textContent = '취소';
-  cancelBtn.addEventListener('click', () => onClose());
-  btnRow.appendChild(saveBtn);
-  btnRow.appendChild(cancelBtn);
-  form.appendChild(btnRow);
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const now = Date.now();
-    if (existing) {
-      Object.assign(existing, {
-        depDate: depInput.value, arrDate: arrInput.value,
-        airline: airlineInput.value.trim(), code: codeInput.value.trim(),
-        updatedAt: now,
-      });
-    } else {
-      travel.flights.push({
-        id: newId(), tripId: trip.id,
-        depDate: depInput.value, arrDate: arrInput.value,
-        airline: airlineInput.value.trim(), code: codeInput.value.trim(),
-        updatedAt: now,
-      });
+  cancelBtn.addEventListener('click', closeModal);
+  const makeBtn = document.createElement('button');
+  makeBtn.type = 'button';
+  makeBtn.className = 'btn btn-primary small';
+  makeBtn.textContent = '만들기';
+  makeBtn.addEventListener('click', () => {
+    const name = nameField.input.value.trim();
+    if (!name) { errorEl.textContent = '여행 이름을 입력해주세요.'; errorEl.classList.remove('hidden'); return; }
+    if (!startField.input.value || !endField.input.value) {
+      errorEl.textContent = '여행 시작일과 종료일을 선택해주세요.'; errorEl.classList.remove('hidden'); return;
     }
-    saveTravel();
-    onClose();
-    renderPanel();
-  });
-
-  return form;
-}
-
-/* ================= 숙소 ================= */
-
-function buildStays(trip, body) {
-  const addWrap = document.createElement('div');
-  const addBtn = document.createElement('button');
-  addBtn.type = 'button';
-  addBtn.className = 'btn btn-primary small';
-  addBtn.textContent = '+ 숙소 추가';
-  const formSlot = document.createElement('div');
-  addBtn.addEventListener('click', () => {
-    formSlot.innerHTML = '';
-    formSlot.appendChild(buildStayForm(trip, null, () => { formSlot.innerHTML = ''; }));
-  });
-  addWrap.appendChild(addBtn);
-  addWrap.appendChild(formSlot);
-  body.appendChild(addWrap);
-
-  const list = staysOfTrip(trip.id);
-  if (list.length === 0) {
-    const empty = document.createElement('p');
-    empty.className = 'list-empty';
-    empty.textContent = '아직 등록된 숙소가 없어요.';
-    body.appendChild(empty);
-    return;
-  }
-
-  list.forEach((stay) => {
-    const rowWrap = document.createElement('div');
-    const row = document.createElement('div');
-    row.className = 'flight-row';
-
-    const info = document.createElement('div');
-    info.className = 'flight-info';
-    const line1 = document.createElement('div');
-    line1.className = 'flight-airline';
-    line1.textContent = stay.name;
-    const line2 = document.createElement('div');
-    line2.className = 'flight-dates';
-    line2.textContent = `${stay.checkIn} ~ ${stay.checkOut}`;
-    info.appendChild(line1);
-    info.appendChild(line2);
-
-    const actions = document.createElement('div');
-    actions.className = 'item-actions';
-    const editBtn = document.createElement('button');
-    editBtn.type = 'button';
-    editBtn.className = 'gear-act gear-edit';
-    editBtn.textContent = '✎';
-    const editSlot = document.createElement('div');
-    editBtn.addEventListener('click', () => {
-      if (editSlot.childElementCount) { editSlot.innerHTML = ''; return; }
-      editSlot.appendChild(buildStayForm(trip, stay, () => { editSlot.innerHTML = ''; }));
-    });
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.className = 'gear-act gear-del';
-    delBtn.textContent = '✕';
-    delBtn.addEventListener('click', () => {
-      travel.stays = travel.stays.filter((s) => s.id !== stay.id);
-      saveTravel();
-      renderPanel();
-    });
-    actions.appendChild(editBtn);
-    actions.appendChild(delBtn);
-
-    row.appendChild(info);
-    row.appendChild(actions);
-    rowWrap.appendChild(row);
-    rowWrap.appendChild(editSlot);
-    body.appendChild(rowWrap);
-  });
-}
-
-function buildStayForm(trip, existing, onClose) {
-  const form = document.createElement('form');
-  form.className = 'item-form';
-
-  const nameField = document.createElement('label');
-  nameField.className = 'field';
-  nameField.innerHTML = '<span class="field-label">숙소 이름</span>';
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.required = true;
-  nameInput.maxLength = 60;
-  nameInput.value = existing ? existing.name : '';
-  nameField.appendChild(nameInput);
-  form.appendChild(nameField);
-
-  const row1 = document.createElement('div');
-  row1.className = 'item-form-row';
-  const inField = document.createElement('label');
-  inField.className = 'field';
-  inField.innerHTML = '<span class="field-label">체크인</span>';
-  const inInput = document.createElement('input');
-  inInput.type = 'date';
-  inInput.required = true;
-  inInput.value = existing ? existing.checkIn : trip.start;
-  inField.appendChild(inInput);
-
-  const outField = document.createElement('label');
-  outField.className = 'field';
-  outField.innerHTML = '<span class="field-label">체크아웃</span>';
-  const outInput = document.createElement('input');
-  outInput.type = 'date';
-  outInput.required = true;
-  outInput.value = existing ? existing.checkOut : trip.end;
-  outField.appendChild(outInput);
-  row1.appendChild(inField);
-  row1.appendChild(outField);
-  form.appendChild(row1);
-
-  const btnRow = document.createElement('div');
-  btnRow.className = 'item-form-row';
-  const saveBtn = document.createElement('button');
-  saveBtn.type = 'submit';
-  saveBtn.className = 'btn btn-primary small';
-  saveBtn.textContent = existing ? '고치기' : '추가하기';
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.className = 'btn btn-outline small';
-  cancelBtn.textContent = '취소';
-  cancelBtn.addEventListener('click', () => onClose());
-  btnRow.appendChild(saveBtn);
-  btnRow.appendChild(cancelBtn);
-  form.appendChild(btnRow);
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const now = Date.now();
-    if (existing) {
-      Object.assign(existing, {
-        name: nameInput.value.trim(), checkIn: inInput.value, checkOut: outInput.value,
-        updatedAt: now,
-      });
-    } else {
-      travel.stays.push({
-        id: newId(), tripId: trip.id,
-        name: nameInput.value.trim(), checkIn: inInput.value, checkOut: outInput.value,
-        updatedAt: now,
-      });
+    if (toUTC(endField.input.value) < toUTC(startField.input.value)) {
+      errorEl.textContent = '종료일이 시작일보다 빠를 수 없어요.'; errorEl.classList.remove('hidden'); return;
     }
+    const trip = { id: newId(), name, start: startField.input.value, end: endField.input.value, order: travel.trips.length, updatedAt: Date.now() };
+    travel.trips.push(trip);
     saveTravel();
-    onClose();
-    renderPanel();
+    setActiveTrip(trip.id);
+    closeModal();
+    renderAll();
+    showToast(`${name} 여행을 추가했어요`);
   });
+  actions.appendChild(cancelBtn);
+  actions.appendChild(makeBtn);
+  card.appendChild(actions);
 
-  return form;
+  return card;
 }
 
-/* ================= 체크리스트 ================= */
-
-function buildChecklist(trip, body) {
-  const form = document.createElement('form');
-  form.className = 'gear-add';
-  const row = document.createElement('div');
-  row.className = 'gear-add-row';
+function labeledField(label, type) {
+  const wrap = document.createElement('label');
+  wrap.className = 'field';
+  const span = document.createElement('span');
+  span.className = 'field-label';
+  span.textContent = label;
   const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = '챙길 것을 적고 추가하세요 (예: 여권)';
-  input.maxLength = 60;
-  const addBtn = document.createElement('button');
-  addBtn.type = 'submit';
-  addBtn.className = 'btn btn-primary';
-  addBtn.textContent = '추가';
-  row.appendChild(input);
-  row.appendChild(addBtn);
-  form.appendChild(row);
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const text = input.value.trim();
-    if (!text) return;
-    travel.checks.push({ id: newId(), tripId: trip.id, text, checked: false, updatedAt: Date.now() });
-    saveTravel();
-    input.value = '';
-    input.focus();
-    renderPanel();
-  });
-  body.appendChild(form);
+  input.type = type || 'text';
+  wrap.appendChild(span);
+  wrap.appendChild(input);
+  return { wrap, input };
+}
+
+/* ---- 항공편 관리 ---- */
+function buildFlightDialog(trip) {
+  const card = document.createElement('div');
+  card.className = 'modal-card';
+  modalHeader(card, '항공편 관리', '입력하면 해당 기간의 일차 옆에 항공편 정보가 표시됩니다.');
 
   const list = document.createElement('ul');
-  list.className = 'gear-list';
-  const items = checksOfTrip(trip.id);
+  list.className = 'modal-list';
+  card.appendChild(list);
 
-  if (items.length === 0) {
-    const empty = document.createElement('li');
-    empty.className = 'list-empty';
-    empty.textContent = '체크리스트 항목을 추가해 보세요.';
-    list.appendChild(empty);
-  } else {
-    items.forEach((item) => {
+  const body = document.createElement('div');
+  body.className = 'modal-body';
+  const editingNote = document.createElement('p');
+  editingNote.className = 'modal-hint hidden';
+  editingNote.textContent = '항공편 정보 수정 중';
+
+  const dateRow = document.createElement('div');
+  dateRow.className = 'field-row';
+  const depField = labeledField('출발일', 'date');
+  const arrField = labeledField('도착일', 'date');
+  dateRow.appendChild(depField.wrap);
+  dateRow.appendChild(arrField.wrap);
+
+  const airlineField = labeledField('항공사');
+  airlineField.input.placeholder = '예: 대한항공';
+  const codeField = labeledField('항공편 코드');
+  codeField.input.placeholder = '예: KE001';
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'modal-error hidden';
+
+  body.appendChild(editingNote);
+  body.appendChild(dateRow);
+  body.appendChild(airlineField.wrap);
+  body.appendChild(codeField.wrap);
+  body.appendChild(errorEl);
+  card.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  const secondaryBtn = document.createElement('button');
+  secondaryBtn.type = 'button';
+  secondaryBtn.className = 'btn btn-outline small';
+  secondaryBtn.textContent = '닫기';
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-primary small';
+  saveBtn.textContent = '추가';
+  actions.appendChild(secondaryBtn);
+  actions.appendChild(saveBtn);
+  card.appendChild(actions);
+
+  let editingId = null;
+
+  function resetForm() {
+    editingId = null;
+    depField.input.value = trip.start;
+    arrField.input.value = trip.start;
+    airlineField.input.value = '';
+    codeField.input.value = '';
+    editingNote.classList.add('hidden');
+    secondaryBtn.textContent = '닫기';
+    secondaryBtn.onclick = closeModal;
+    saveBtn.textContent = '추가';
+    errorEl.classList.add('hidden');
+  }
+
+  function renderList() {
+    list.innerHTML = '';
+    const rows = flightsOfTrip(trip.id);
+    rows.forEach((flight) => {
       const li = document.createElement('li');
-      li.className = 'gear-item' + (item.checked ? ' done' : '');
+      li.className = 'modal-list-item' + (editingId === flight.id ? ' editing' : '');
+      const info = document.createElement('div');
+      const t1 = document.createElement('p');
+      t1.className = 'modal-list-item-title';
+      t1.textContent = `${flight.airline} ${flight.code}`;
+      const t2 = document.createElement('p');
+      t2.className = 'modal-list-item-sub';
+      t2.textContent = `${formatDisplayDate(flight.depDate)} ~ ${formatDisplayDate(flight.arrDate)}`;
+      info.appendChild(t1);
+      info.appendChild(t2);
 
-      const check = document.createElement('span');
-      check.className = 'gear-check';
-      check.textContent = '✓';
-
-      const text = document.createElement('span');
-      text.className = 'gear-text';
-      text.textContent = item.text;
-
-      const actions = document.createElement('span');
-      actions.className = 'gear-actions';
+      const acts = document.createElement('div');
+      acts.className = 'modal-list-actions';
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
-      editBtn.className = 'gear-act gear-edit';
-      editBtn.textContent = '✎';
-      editBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const next = window.prompt('이름을 고칩니다', item.text);
-        if (next === null) return;
-        const t = next.trim();
-        if (!t) { showToast('이름을 비워둘 수는 없어요'); return; }
-        item.text = t;
-        item.updatedAt = Date.now();
-        saveTravel();
-        renderPanel();
+      editBtn.className = 'modal-link-btn';
+      editBtn.textContent = '수정';
+      editBtn.addEventListener('click', () => {
+        editingId = flight.id;
+        depField.input.value = flight.depDate;
+        arrField.input.value = flight.arrDate;
+        airlineField.input.value = flight.airline;
+        codeField.input.value = flight.code;
+        editingNote.classList.remove('hidden');
+        secondaryBtn.textContent = '취소';
+        secondaryBtn.onclick = () => { resetForm(); renderList(); };
+        saveBtn.textContent = '수정 저장';
+        renderList();
       });
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
-      delBtn.className = 'gear-act gear-del';
-      delBtn.textContent = '✕';
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        travel.checks = travel.checks.filter((c) => c.id !== item.id);
+      delBtn.className = 'modal-link-btn danger';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', () => {
+        travel.flights = travel.flights.filter((f) => f.id !== flight.id);
         saveTravel();
+        if (editingId === flight.id) resetForm();
+        renderList();
         renderPanel();
       });
-      actions.appendChild(editBtn);
-      actions.appendChild(delBtn);
-
-      li.appendChild(check);
-      li.appendChild(text);
-      li.appendChild(actions);
-      li.addEventListener('click', () => {
-        item.checked = !item.checked;
-        item.updatedAt = Date.now();
-        saveTravel();
-        renderPanel();
-      });
+      acts.appendChild(editBtn);
+      acts.appendChild(delBtn);
+      li.appendChild(info);
+      li.appendChild(acts);
       list.appendChild(li);
     });
   }
-  body.appendChild(list);
+
+  saveBtn.addEventListener('click', () => {
+    const airline = airlineField.input.value.trim();
+    const code = codeField.input.value.trim();
+    if (!airline || !code) { errorEl.textContent = '항공사와 항공편 코드를 입력해주세요.'; errorEl.classList.remove('hidden'); return; }
+    const now = Date.now();
+    if (editingId) {
+      const f = travel.flights.find((x) => x.id === editingId);
+      Object.assign(f, { depDate: depField.input.value, arrDate: arrField.input.value, airline, code, updatedAt: now });
+    } else {
+      travel.flights.push({ id: newId(), tripId: trip.id, depDate: depField.input.value, arrDate: arrField.input.value, airline, code, updatedAt: now });
+    }
+    saveTravel();
+    resetForm();
+    renderList();
+    renderPanel();
+  });
+
+  resetForm();
+  renderList();
+  return card;
 }
 
-/* ================= 여행 관리 ================= */
+/* ---- 숙소 관리 ---- */
+function buildAccommodationDialog(trip) {
+  const card = document.createElement('div');
+  card.className = 'modal-card';
+  modalHeader(card, '숙소 관리', '입력하면 해당 기간의 일차 옆에 숙소명이 표시됩니다.');
 
-function addTrip(name, start, end) {
-  const trip = { id: newId(), name, start, end, order: travel.trips.length, updatedAt: Date.now() };
-  travel.trips.push(trip);
-  saveTravel();
-  setActiveTrip(trip.id);
-  renderAll();
-  showToast(`${name} 여행을 추가했어요`);
-}
+  const list = document.createElement('ul');
+  list.className = 'modal-list';
+  card.appendChild(list);
 
-function renameTrip(trip) {
-  const next = window.prompt('여행 이름을 바꿉니다', trip.name);
-  if (next === null) return;
-  const name = next.trim();
-  if (!name) { showToast('이름을 비워둘 수는 없어요'); return; }
-  trip.name = name;
-  trip.updatedAt = Date.now();
-  saveTravel();
-  renderAll();
-}
+  const body = document.createElement('div');
+  body.className = 'modal-body';
+  const editingNote = document.createElement('p');
+  editingNote.className = 'modal-hint hidden';
+  editingNote.textContent = '숙소 정보 수정 중';
 
-function editTripDates(trip) {
-  const start = window.prompt('시작일 (예: 2026-10-29)', trip.start);
-  if (start === null) return;
-  const end = window.prompt('종료일 (예: 2026-11-08)', trip.end);
-  if (end === null) return;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
-    showToast('날짜 형식이 올바르지 않아요 (예: 2026-10-29)');
-    return;
+  const nameField = labeledField('숙소 이름');
+  nameField.input.placeholder = '예: 오사카 호텔';
+
+  const dateRow = document.createElement('div');
+  dateRow.className = 'field-row';
+  const inField = labeledField('체크인', 'date');
+  const outField = labeledField('체크아웃', 'date');
+  dateRow.appendChild(inField.wrap);
+  dateRow.appendChild(outField.wrap);
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'modal-error hidden';
+
+  body.appendChild(editingNote);
+  body.appendChild(nameField.wrap);
+  body.appendChild(dateRow);
+  body.appendChild(errorEl);
+  card.appendChild(body);
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  const secondaryBtn = document.createElement('button');
+  secondaryBtn.type = 'button';
+  secondaryBtn.className = 'btn btn-outline small';
+  secondaryBtn.textContent = '닫기';
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'btn btn-primary small';
+  saveBtn.textContent = '추가';
+  actions.appendChild(secondaryBtn);
+  actions.appendChild(saveBtn);
+  card.appendChild(actions);
+
+  let editingId = null;
+
+  function resetForm() {
+    editingId = null;
+    nameField.input.value = '';
+    inField.input.value = trip.start;
+    outField.input.value = trip.start;
+    editingNote.classList.add('hidden');
+    secondaryBtn.textContent = '닫기';
+    secondaryBtn.onclick = closeModal;
+    saveBtn.textContent = '추가';
+    errorEl.classList.add('hidden');
   }
-  if (toUTC(end) < toUTC(start)) { showToast('종료일이 시작일보다 빠를 수 없어요'); return; }
-  trip.start = start;
-  trip.end = end;
-  trip.updatedAt = Date.now();
-  saveTravel();
-  renderAll();
+
+  function renderList() {
+    list.innerHTML = '';
+    staysOfTrip(trip.id).forEach((acc) => {
+      const li = document.createElement('li');
+      li.className = 'modal-list-item' + (editingId === acc.id ? ' editing' : '');
+      const info = document.createElement('div');
+      const t1 = document.createElement('p');
+      t1.className = 'modal-list-item-title';
+      t1.textContent = acc.name;
+      const t2 = document.createElement('p');
+      t2.className = 'modal-list-item-sub';
+      t2.textContent = `${formatDisplayDate(acc.checkIn)} ~ ${formatDisplayDate(acc.checkOut)}`;
+      info.appendChild(t1);
+      info.appendChild(t2);
+
+      const acts = document.createElement('div');
+      acts.className = 'modal-list-actions';
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.className = 'modal-link-btn';
+      editBtn.textContent = '수정';
+      editBtn.addEventListener('click', () => {
+        editingId = acc.id;
+        nameField.input.value = acc.name;
+        inField.input.value = acc.checkIn;
+        outField.input.value = acc.checkOut;
+        editingNote.classList.remove('hidden');
+        secondaryBtn.textContent = '취소';
+        secondaryBtn.onclick = () => { resetForm(); renderList(); };
+        saveBtn.textContent = '수정 저장';
+        renderList();
+      });
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'modal-link-btn danger';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', () => {
+        travel.stays = travel.stays.filter((s) => s.id !== acc.id);
+        saveTravel();
+        if (editingId === acc.id) resetForm();
+        renderList();
+        renderPanel();
+      });
+      acts.appendChild(editBtn);
+      acts.appendChild(delBtn);
+      li.appendChild(info);
+      li.appendChild(acts);
+      list.appendChild(li);
+    });
+  }
+
+  saveBtn.addEventListener('click', () => {
+    const name = nameField.input.value.trim();
+    if (!name) { errorEl.textContent = '숙소 이름을 입력해주세요.'; errorEl.classList.remove('hidden'); return; }
+    if (!inField.input.value || !outField.input.value) {
+      errorEl.textContent = '체크인일과 체크아웃일을 선택해주세요.'; errorEl.classList.remove('hidden'); return;
+    }
+    const now = Date.now();
+    if (editingId) {
+      const s = travel.stays.find((x) => x.id === editingId);
+      Object.assign(s, { name, checkIn: inField.input.value, checkOut: outField.input.value, updatedAt: now });
+    } else {
+      travel.stays.push({ id: newId(), tripId: trip.id, name, checkIn: inField.input.value, checkOut: outField.input.value, updatedAt: now });
+    }
+    saveTravel();
+    resetForm();
+    renderList();
+    renderPanel();
+  });
+
+  resetForm();
+  renderList();
+  return card;
 }
 
-function deleteTrip(trip) {
-  if (!window.confirm(`'${trip.name}' 여행 기록을 전부(일정 · 항공편 · 숙소 · 체크리스트) 삭제할까요?`)) return;
-  const id = trip.id;
-  travel.trips = travel.trips.filter((t) => t.id !== id);
-  travel.items = travel.items.filter((i) => i.tripId !== id);
-  travel.flights = travel.flights.filter((f) => f.tripId !== id);
-  travel.stays = travel.stays.filter((s) => s.tripId !== id);
-  travel.checks = travel.checks.filter((c) => c.tripId !== id);
-  travel.summaries = travel.summaries.filter((s) => s.tripId !== id);
-  saveTravel();
-  setActiveTrip(travel.trips[0] ? travel.trips[0].id : null);
-  renderAll();
-  showToast('여행을 삭제했어요');
+/* ---- 체크리스트 ---- */
+function buildChecklistDialog(trip) {
+  const card = document.createElement('div');
+  card.className = 'modal-card';
+  modalHeader(card, '체크리스트', '여행 준비물을 관리하세요.');
+
+  const list = document.createElement('ul');
+  list.className = 'modal-list';
+  card.appendChild(list);
+
+  const addRow = document.createElement('div');
+  addRow.className = 'checklist-add-row';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cell-input';
+  input.style.cssText = 'flex:1;padding:9px 10px;font-size:.85rem;';
+  input.placeholder = '예: 여권';
+  const addBtn = document.createElement('button');
+  addBtn.type = 'button';
+  addBtn.className = 'btn btn-primary small';
+  addBtn.textContent = '추가';
+  addRow.appendChild(input);
+  addRow.appendChild(addBtn);
+  card.appendChild(addRow);
+
+  const errorEl = document.createElement('p');
+  errorEl.className = 'modal-error hidden';
+  card.appendChild(errorEl);
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'btn btn-outline small';
+  closeBtn.textContent = '닫기';
+  closeBtn.addEventListener('click', closeModal);
+  actions.appendChild(closeBtn);
+  card.appendChild(actions);
+
+  function renderList() {
+    list.innerHTML = '';
+    const items = checksOfTrip(trip.id);
+    if (items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'list-empty';
+      li.textContent = '아직 항목이 없습니다.';
+      list.appendChild(li);
+      return;
+    }
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.className = 'checklist-item' + (item.checked ? ' checked' : '');
+      const check = document.createElement('input');
+      check.type = 'checkbox';
+      check.checked = item.checked;
+      check.addEventListener('change', () => {
+        item.checked = check.checked;
+        item.updatedAt = Date.now();
+        saveTravel();
+        renderList();
+        renderPanel();
+      });
+      const text = document.createElement('span');
+      text.className = 'text';
+      text.textContent = item.text;
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'modal-link-btn danger';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', () => {
+        travel.checks = travel.checks.filter((c) => c.id !== item.id);
+        saveTravel();
+        renderList();
+        renderPanel();
+      });
+      li.appendChild(check);
+      li.appendChild(text);
+      li.appendChild(delBtn);
+      list.appendChild(li);
+    });
+  }
+
+  function handleAdd() {
+    const text = input.value.trim();
+    if (!text) { errorEl.textContent = '준비물을 입력해주세요.'; errorEl.classList.remove('hidden'); return; }
+    errorEl.classList.add('hidden');
+    travel.checks.push({ id: newId(), tripId: trip.id, text, checked: false, updatedAt: Date.now() });
+    saveTravel();
+    input.value = '';
+    renderList();
+    renderPanel();
+  }
+  addBtn.addEventListener('click', handleAdd);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAdd(); });
+
+  renderList();
+  return card;
+}
+
+/* ===========================================================
+   동선(지도) — 실제 구글 지도 SDK 를 씁니다 (별도 API 키 필요).
+   =========================================================== */
+
+let mapsLoadPromise = null;
+function loadGoogleMapsSdk() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('브라우저 환경이 아닙니다.'));
+  if (window.google && window.google.maps) return Promise.resolve();
+  if (mapsLoadPromise) return mapsLoadPromise;
+
+  mapsLoadPromise = new Promise((resolve, reject) => {
+    const existing = document.getElementById('google-maps-sdk');
+    if (existing) {
+      existing.addEventListener('load', () => resolve());
+      existing.addEventListener('error', () => { mapsLoadPromise = null; reject(new Error('구글맵 스크립트를 불러오지 못했습니다.')); });
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'google-maps-sdk';
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${window.GOOGLE_MAPS_API_KEY}&loading=async`;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => { mapsLoadPromise = null; reject(new Error('구글맵 스크립트를 불러오지 못했습니다.')); };
+    document.head.appendChild(script);
+  });
+  return mapsLoadPromise;
+}
+
+/** 일차 → sortOrder 순서 그대로, 좌표가 있는 항목만 골라 씁니다. */
+function sortForRoute(items) {
+  return items
+    .filter((i) => typeof i.lat === 'number' && typeof i.lng === 'number')
+    .sort((a, b) => (a.day !== b.day ? a.day - b.day : a.order - b.order));
+}
+function isFlightLeg(a, b) {
+  return a.category === 'flight' && b.category === 'flight';
+}
+
+function buildRouteMapDialog(trip) {
+  const card = document.createElement('div');
+  card.className = 'modal-card wide';
+  card.style.cssText = card.style.cssText + 'display:flex;flex-direction:column;';
+
+  const top = document.createElement('div');
+  top.style.cssText = 'display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;';
+  const titleBox = document.createElement('div');
+  const title = document.createElement('h2');
+  title.className = 'modal-title';
+  title.textContent = `🌐 ${trip.name} 동선`;
+  const statusText = document.createElement('p');
+  statusText.className = 'modal-sub';
+  statusText.textContent = '지도를 불러오는 중...';
+  titleBox.appendChild(title);
+  titleBox.appendChild(statusText);
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'btn btn-outline small';
+  closeBtn.textContent = '닫기';
+  closeBtn.addEventListener('click', closeModal);
+  top.appendChild(titleBox);
+  top.appendChild(closeBtn);
+  card.appendChild(top);
+
+  const dayPicker = document.createElement('div');
+  dayPicker.className = 'route-day-picker hidden';
+  card.appendChild(dayPicker);
+
+  const mapWrap = document.createElement('div');
+  mapWrap.className = 'route-map-wrap';
+  const mapEl = document.createElement('div');
+  mapEl.className = 'route-map';
+  const statusOverlay = document.createElement('div');
+  statusOverlay.className = 'route-status';
+  statusOverlay.textContent = '지도를 불러오는 중...';
+  mapWrap.appendChild(mapEl);
+  mapWrap.appendChild(statusOverlay);
+  card.appendChild(mapWrap);
+
+  const missingBox = document.createElement('div');
+  missingBox.className = 'route-missing hidden';
+  card.appendChild(missingBox);
+
+  const items = itemsOfTrip(trip.id);
+  const points = sortForRoute(items);
+  const withLocationCount = items.filter((i) => i.location && i.location.trim()).length;
+
+  let selectedDay = 'all';
+  let map = null;
+  let markers = [];
+  let polylines = [];
+
+  function pointsForDay(day) {
+    return day === 'all' ? points : points.filter((i) => i.day === day);
+  }
+
+  function renderMissing() {
+    const currentPoints = pointsForDay(selectedDay);
+    const plottedIds = new Set(currentPoints.map((p) => p.id));
+    const scoped = selectedDay === 'all' ? items : items.filter((i) => i.day === selectedDay);
+    const missing = scoped
+      .filter((i) => ((i.schedule && i.schedule.trim()) || (i.location && i.location.trim())) && !plottedIds.has(i.id))
+      .sort((a, b) => (a.day !== b.day ? a.day - b.day : a.order - b.order));
+
+    missingBox.innerHTML = '';
+    missingBox.classList.toggle('hidden', missing.length === 0);
+    if (missing.length === 0) return;
+    const p = document.createElement('p');
+    p.className = 'route-missing-title';
+    p.textContent = `동선에 표시되지 않은 일정 (${missing.length}개)`;
+    missingBox.appendChild(p);
+    missing.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'route-missing-item';
+      const label = document.createElement('span');
+      label.style.fontWeight = '700';
+      label.textContent = `${item.day}일차${item.time ? ` ${item.time}` : ''}`;
+      const text = document.createElement('span');
+      text.style.cssText = 'flex:1;min-width:0;';
+      text.textContent = item.schedule || item.location;
+      const tag = document.createElement('span');
+      tag.className = 'route-missing-tag';
+      tag.textContent = item.location && item.location.trim() ? '좌표 없음' : '위치 미입력';
+      row.appendChild(label);
+      row.appendChild(text);
+      row.appendChild(tag);
+      missingBox.appendChild(row);
+    });
+  }
+
+  function draw() {
+    if (!map || !window.google) return;
+    const maps = window.google.maps;
+    markers.forEach((m) => m.setMap(null));
+    polylines.forEach((p) => p.setMap(null));
+    markers = []; polylines = [];
+
+    const currentPoints = pointsForDay(selectedDay);
+    if (currentPoints.length === 0) { renderMissing(); return; }
+
+    const bounds = new maps.LatLngBounds();
+    const byDay = new Map();
+    const orderCounters = new Map();
+
+    currentPoints.forEach((item) => {
+      const position = { lat: item.lat, lng: item.lng };
+      bounds.extend(position);
+      const list = byDay.get(item.day) || [];
+      list.push(item);
+      byDay.set(item.day, list);
+      const orderInDay = (orderCounters.get(item.day) || 0) + 1;
+      orderCounters.set(item.day, orderInDay);
+
+      const marker = new maps.Marker({
+        position, map,
+        label: { text: String(orderInDay), color: '#ffffff', fontWeight: 'bold', fontSize: '11px' },
+      });
+      markers.push(marker);
+      const info = new maps.InfoWindow({
+        content: `<div style="padding:6px 10px;font-size:12px;white-space:nowrap;"><b>${item.day}일차 ${orderInDay}번째${item.time ? ` · ${item.time}` : ''}</b><br/>${item.schedule || item.location}</div>`,
+      });
+      maps.event.addListener(marker, 'click', () => info.open({ map, anchor: marker }));
+    });
+
+    byDay.forEach((dayItems, dayNumber) => {
+      if (dayItems.length < 2) return;
+      const path = dayItems.map((p) => ({ lat: p.lat, lng: p.lng }));
+      const polyline = new maps.Polyline({
+        map, path,
+        strokeColor: DAY_COLORS[(dayNumber - 1) % DAY_COLORS.length],
+        strokeOpacity: 0.85, strokeWeight: 4,
+      });
+      polylines.push(polyline);
+    });
+
+    if (currentPoints.length === 1) {
+      map.setCenter({ lat: currentPoints[0].lat, lng: currentPoints[0].lng });
+      map.setZoom(13);
+    } else {
+      map.fitBounds(bounds);
+    }
+    renderMissing();
+  }
+
+  function renderDayPicker() {
+    const days = [...new Set(points.map((p) => p.day))].sort((a, b) => a - b);
+    if (days.length <= 1) { dayPicker.classList.add('hidden'); return; }
+    dayPicker.classList.remove('hidden');
+    dayPicker.innerHTML = '';
+    const allBtn = document.createElement('button');
+    allBtn.type = 'button';
+    allBtn.className = 'route-day-pill' + (selectedDay === 'all' ? ' on' : '');
+    if (selectedDay === 'all') allBtn.style.background = 'var(--primary)';
+    allBtn.textContent = '전체';
+    allBtn.addEventListener('click', () => { selectedDay = 'all'; renderDayPicker(); draw(); });
+    dayPicker.appendChild(allBtn);
+    days.forEach((day) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'route-day-pill' + (selectedDay === day ? ' on' : '');
+      if (selectedDay === day) btn.style.background = DAY_COLORS[(day - 1) % DAY_COLORS.length];
+      btn.textContent = `${day}일차`;
+      btn.addEventListener('click', () => { selectedDay = day; renderDayPicker(); draw(); });
+      dayPicker.appendChild(btn);
+    });
+  }
+
+  if (!window.GOOGLE_MAPS_API_KEY) {
+    statusOverlay.textContent = '구글맵 API 키가 설정되지 않았습니다. maps-config.js 를 확인해주세요.';
+    statusText.textContent = '';
+  } else if (points.length === 0) {
+    statusOverlay.textContent = withLocationCount === 0
+      ? '위치가 입력된 일정이 없습니다.'
+      : '저장된 좌표가 없습니다. 일정 수정에서 좌표를 넣어주세요.';
+    statusText.textContent = '';
+  } else {
+    loadGoogleMapsSdk()
+      .then(() => {
+        const maps = window.google.maps;
+        map = new maps.Map(mapEl, { center: { lat: points[0].lat, lng: points[0].lng }, zoom: 8 });
+        statusOverlay.classList.add('hidden');
+        statusText.textContent = `${points.length}개 위치 표시됨`;
+        renderDayPicker();
+        draw();
+      })
+      .catch(() => {
+        statusOverlay.textContent = '구글맵 스크립트를 불러오지 못했습니다. (도메인이 허용 목록에 없을 수 있어요)';
+        statusText.textContent = '';
+      });
+  }
+
+  return card;
 }
 
 /* ===========================================================
@@ -1464,60 +1802,13 @@ window.CampApp = {
   toast: showToast,
 };
 
-/* ---- 새 여행 만들기 폼 ---- */
-const newTripForm = document.getElementById('newTripForm');
-const newTripChevron = document.getElementById('newTripChevron');
-const startInput = document.getElementById('startInput');
-const endInput = document.getElementById('endInput');
-const nameInput = document.getElementById('nameInput');
-
-function toggleNewTripForm(show) {
-  const willShow = show === undefined ? newTripForm.classList.contains('hidden') : show;
-  newTripForm.classList.toggle('hidden', !willShow);
-  newTripChevron.textContent = willShow ? '▴' : '▾';
-}
-
-document.getElementById('newTripToggle').addEventListener('click', () => toggleNewTripForm());
-
-startInput.addEventListener('change', () => {
-  if (!startInput.value) return;
-  endInput.min = startInput.value;
-  if (endInput.value && endInput.value < startInput.value) endInput.value = startInput.value;
-});
-
-newTripForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const start = startInput.value;
-  const end = endInput.value;
-  const name = nameInput.value.trim();
-
-  if (!start || !end) { showToast('시작일과 종료일을 골라주세요'); return; }
-  if (!name) { showToast('여행 이름을 적어주세요'); return; }
-  if (toUTC(end) < toUTC(start)) { showToast('종료일이 시작일보다 빠를 수 없어요'); return; }
-
-  addTrip(name, start, end);
-
-  nameInput.value = '';
-  const nextStart = addDaysISO(end, 1);
-  startInput.value = nextStart;
-  endInput.value = addDaysISO(nextStart, 1);
-  endInput.min = nextStart;
-  toggleNewTripForm(false);
-});
-
 const lightboxEl = document.getElementById('lightbox');
 if (lightboxEl) lightboxEl.addEventListener('click', closeLightbox);
 
 // ---- init ----
 const seeded = maybeImportSeed();
 
-const today = todayISO();
-startInput.value = today;
-endInput.value = addDaysISO(today, 1);
-endInput.min = today;
-
 if (travel.trips.length && !getActiveTrip()) setActiveTrip(sortedTrips()[0].id);
-if (travel.trips.length === 0) toggleNewTripForm(true);
 
 renderAll();
 
