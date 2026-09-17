@@ -405,10 +405,13 @@ function buildToolbar(trip) {
   bar.appendChild(make('+ 숙소', () => openModal(buildAccommodationDialog(trip))));
   bar.appendChild(make('체크리스트', () => openModal(buildChecklistDialog(trip))));
   bar.appendChild(make('🌐 동선', () => openModal(buildRouteMapDialog(trip))));
+  let summaryBtn;
+  summaryBtn = make('🤖 요약 확인', () => runSummaryCheckFromButton(trip, summaryBtn));
+  bar.appendChild(summaryBtn);
   return bar;
 }
 
-/* ---- 일차별 요약 : 읽기 전용, 앱이 만들지 않고 Claude Code 에게 요청해 채웁니다 ---- */
+/* ---- 일차별 요약 : 읽기 전용, AI 자동 생성(runSummaryCheck)이나 아래 배치가 채웁니다 ---- */
 function buildSummaryStrip(trip) {
   const byDay = new Map(
     travel.summaries.filter((s) => s.tripId === trip.id).map((s) => [s.day, s])
@@ -424,27 +427,14 @@ function buildSummaryStrip(trip) {
     const dayItems = itemsOfDay(trip.id, day);
     if (!s && dayItems.length === 0) return; // 일정도 없고 요약도 없으면 카드 자체를 안 보여줍니다.
 
-    const card = document.createElement('div');
+    const card = document.createElement('a');
     card.className = 'summary-card';
+    card.href = `#day-${day}`;
 
-    const head = document.createElement('div');
-    head.className = 'summary-card-head';
-    const titleLink = document.createElement('a');
-    titleLink.className = 'summary-card-title';
-    titleLink.href = `#day-${day}`;
-    titleLink.textContent = `${day}일차 요약`;
-    const genBtn = document.createElement('button');
-    genBtn.type = 'button';
-    genBtn.className = 'summary-gen-btn';
-    genBtn.textContent = s ? '🤖 다시 생성' : '🤖 자동 생성';
-    genBtn.disabled = dayItems.length === 0;
-    genBtn.title = dayItems.length === 0
-      ? '이 날에 등록된 일정이 없어요'
-      : '이 날 일정을 바탕으로 AI가 요약을 새로 만듭니다';
-    genBtn.addEventListener('click', () => regenerateDaySummary(trip, day, genBtn));
-    head.appendChild(titleLink);
-    head.appendChild(genBtn);
-    card.appendChild(head);
+    const title = document.createElement('p');
+    title.className = 'summary-card-title';
+    title.textContent = `${day}일차 요약`;
+    card.appendChild(title);
 
     const rows = [
       { label: '주요 동선', text: s ? s.route : '' },
@@ -487,22 +477,30 @@ function buildSummaryStrip(trip) {
 /* ===========================================================
    일차 요약 자동 생성 — Supabase Edge Function(travel-summary)이
    Claude API를 호출해 mainRoute/checkpoints/cautions 를 만들어 줍니다.
+   일자별로 하나씩 누르는 대신, 일정이 바뀐 날만 골라서 한 번에
+   돌립니다(수동 버튼 + 1시간마다 자동 확인).
    =========================================================== */
 const SUMMARY_FN_URL = 'https://ctjinobcioovomjoryjt.supabase.co/functions/v1/travel-summary';
+const SUMMARY_CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1시간
 
-function regenerateDaySummary(trip, day, btn) {
+/** 요약이 아예 없거나, 그 날 일정 중 요약보다 나중에 바뀐 게 있으면 "바뀐 날"로 봅니다. */
+function getStaleSummaryDays(trip) {
+  const dates = tripDates(trip);
+  const stale = [];
+  dates.forEach((iso, index) => {
+    const day = index + 1;
+    const dayItems = itemsOfDay(trip.id, day);
+    if (dayItems.length === 0) return;
+    const maxItemUpdatedAt = Math.max(...dayItems.map((i) => i.updatedAt || 0));
+    const summary = travel.summaries.find((s) => s.tripId === trip.id && s.day === day);
+    if (!summary || maxItemUpdatedAt > (summary.updatedAt || 0)) stale.push(day);
+  });
+  return stale;
+}
+
+function fetchDaySummary(trip, day) {
   const dayItems = itemsOfDay(trip.id, day);
-  if (dayItems.length === 0) { showToast('이 날에 등록된 일정이 없어요.'); return; }
-  if (!window.CAMP_SUPABASE || !window.CAMP_SUPABASE.anonKey) {
-    showToast('함께 쓰기 설정이 안 되어 있어서 자동 요약을 쓸 수 없어요.');
-    return;
-  }
-
-  const original = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '생성 중...';
-
-  fetch(SUMMARY_FN_URL, {
+  return fetch(SUMMARY_FN_URL, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -518,32 +516,71 @@ function regenerateDaySummary(trip, day, btn) {
   })
     .then((res) => res.json().catch(() => ({})).then((body) => ({ ok: res.ok, body })))
     .then(({ ok, body }) => {
-      if (!ok || !body || !body.summary) {
-        throw new Error((body && body.error) || '요약 생성에 실패했어요.');
-      }
-      const { mainRoute, checkpoints, cautions } = body.summary;
-      const existing = travel.summaries.find((s) => s.tripId === trip.id && s.day === day);
-      if (existing) {
-        existing.route = mainRoute || '';
-        existing.points = checkpoints || '';
-        existing.cautions = cautions || '';
-        existing.updatedAt = Date.now();
-      } else {
-        travel.summaries.push({
-          id: newId(), tripId: trip.id, day,
-          route: mainRoute || '', points: checkpoints || '', cautions: cautions || '',
-          updatedAt: Date.now(),
-        });
-      }
-      saveTravel();
-      renderPanel();
-      showToast(`${day}일차 요약을 새로 만들었어요`);
-    })
-    .catch((err) => {
-      showToast(err.message || '요약 생성에 실패했어요.');
-      btn.disabled = false;
-      btn.textContent = original;
+      if (!ok || !body || !body.summary) throw new Error((body && body.error) || '요약 생성에 실패했어요.');
+      return body.summary;
     });
+}
+
+function applyDaySummary(trip, day, summary) {
+  const existing = travel.summaries.find((s) => s.tripId === trip.id && s.day === day);
+  if (existing) {
+    existing.route = summary.mainRoute || '';
+    existing.points = summary.checkpoints || '';
+    existing.cautions = summary.cautions || '';
+    existing.updatedAt = Date.now();
+  } else {
+    travel.summaries.push({
+      id: newId(), tripId: trip.id, day,
+      route: summary.mainRoute || '', points: summary.checkpoints || '', cautions: summary.cautions || '',
+      updatedAt: Date.now(),
+    });
+  }
+}
+
+/** 바뀐 일정이 있는 날만 골라 요약을 다시 만듭니다. 수동 버튼과 1시간 자동 확인이 둘 다 이 함수를 씁니다. */
+async function runSummaryCheck(trip, options) {
+  options = options || {};
+  if (!window.CAMP_SUPABASE || !window.CAMP_SUPABASE.anonKey) {
+    if (!options.silent) showToast('함께 쓰기 설정이 안 되어 있어서 자동 요약을 쓸 수 없어요.');
+    return;
+  }
+  const stale = getStaleSummaryDays(trip);
+  if (stale.length === 0) {
+    if (!options.silent) showToast('바뀐 일정이 없어요. 요약은 이미 최신이에요.');
+    return;
+  }
+
+  const succeeded = [];
+  const failed = [];
+  for (const day of stale) {
+    try {
+      const summary = await fetchDaySummary(trip, day);
+      applyDaySummary(trip, day, summary);
+      succeeded.push(day);
+    } catch (err) {
+      failed.push(day);
+    }
+  }
+
+  if (succeeded.length) { saveTravel(); renderPanel(); }
+
+  if (succeeded.length && !failed.length) {
+    showToast(`${succeeded.join(', ')}일차 요약을 새로 만들었어요`);
+  } else if (succeeded.length && failed.length) {
+    showToast(`${succeeded.join(', ')}일차는 새로 만들고, ${failed.join(', ')}일차는 실패했어요`);
+  } else if (!options.silent) {
+    showToast('요약 생성에 실패했어요.');
+  }
+}
+
+function runSummaryCheckFromButton(trip, btn) {
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '확인 중...';
+  runSummaryCheck(trip, { silent: false }).finally(() => {
+    btn.disabled = false;
+    btn.textContent = original;
+  });
 }
 
 function buildDayJumpNav(trip) {
@@ -2070,6 +2107,19 @@ if (reimportSeedBtn) {
     if (t) showToast(`${t.name} 여행 기록을 다시 가져왔어요`);
   });
 }
+
+/**
+ * 일정이 바뀐 날이 있으면 요약을 자동으로 새로 만듭니다. 1시간마다
+ * 확인하고(조용히), 화면이 안 보일 때는 건너뜁니다. 페이지를 막 열었을
+ * 때도 한 번 확인하되, 렌더링이 자리잡을 시간을 조금 줍니다.
+ */
+function autoCheckSummaries() {
+  if (document.visibilityState !== 'visible') return;
+  const trip = getActiveTrip();
+  if (trip) runSummaryCheck(trip, { silent: true });
+}
+setTimeout(autoCheckSummaries, 15000);
+setInterval(autoCheckSummaries, SUMMARY_CHECK_INTERVAL_MS);
 
 if ('serviceWorker' in navigator) {
   const hadOldVersion = !!navigator.serviceWorker.controller;
