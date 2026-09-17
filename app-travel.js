@@ -410,25 +410,45 @@ function buildToolbar(trip) {
 
 /* ---- 일차별 요약 : 읽기 전용, 앱이 만들지 않고 Claude Code 에게 요청해 채웁니다 ---- */
 function buildSummaryStrip(trip) {
-  const summaries = travel.summaries.filter((s) => s.tripId === trip.id).sort((a, b) => a.day - b.day);
-  if (summaries.length === 0) return null;
+  const byDay = new Map(
+    travel.summaries.filter((s) => s.tripId === trip.id).map((s) => [s.day, s])
+  );
+  const dates = tripDates(trip);
 
   const strip = document.createElement('div');
   strip.className = 'summary-strip';
 
-  summaries.forEach((s) => {
-    const card = document.createElement('a');
-    card.className = 'summary-card';
-    card.href = `#day-${s.day}`;
+  dates.forEach((iso, index) => {
+    const day = index + 1;
+    const s = byDay.get(day);
+    const dayItems = itemsOfDay(trip.id, day);
+    if (!s && dayItems.length === 0) return; // 일정도 없고 요약도 없으면 카드 자체를 안 보여줍니다.
 
-    const title = document.createElement('p');
-    title.className = 'summary-card-title';
-    title.textContent = `${s.day}일차 요약`;
-    card.appendChild(title);
+    const card = document.createElement('div');
+    card.className = 'summary-card';
+
+    const head = document.createElement('div');
+    head.className = 'summary-card-head';
+    const titleLink = document.createElement('a');
+    titleLink.className = 'summary-card-title';
+    titleLink.href = `#day-${day}`;
+    titleLink.textContent = `${day}일차 요약`;
+    const genBtn = document.createElement('button');
+    genBtn.type = 'button';
+    genBtn.className = 'summary-gen-btn';
+    genBtn.textContent = s ? '🤖 다시 생성' : '🤖 자동 생성';
+    genBtn.disabled = dayItems.length === 0;
+    genBtn.title = dayItems.length === 0
+      ? '이 날에 등록된 일정이 없어요'
+      : '이 날 일정을 바탕으로 AI가 요약을 새로 만듭니다';
+    genBtn.addEventListener('click', () => regenerateDaySummary(trip, day, genBtn));
+    head.appendChild(titleLink);
+    head.appendChild(genBtn);
+    card.appendChild(head);
 
     const rows = [
-      { label: '주요 동선', text: s.route },
-      { label: '체크포인트', text: s.points },
+      { label: '주요 동선', text: s ? s.route : '' },
+      { label: '체크포인트', text: s ? s.points : '' },
     ];
     rows.forEach((r) => {
       const row = document.createElement('div');
@@ -438,13 +458,13 @@ function buildSummaryStrip(trip) {
       label.textContent = r.label;
       const text = document.createElement('p');
       text.className = 'summary-text';
-      text.textContent = r.text || '-';
+      text.textContent = r.text || (s ? '-' : '아직 요약이 없어요');
       row.appendChild(label);
       row.appendChild(text);
       card.appendChild(row);
     });
 
-    if (s.cautions) {
+    if (s && s.cautions) {
       const row = document.createElement('div');
       row.className = 'summary-row';
       const label = document.createElement('span');
@@ -461,7 +481,69 @@ function buildSummaryStrip(trip) {
     strip.appendChild(card);
   });
 
-  return strip;
+  return strip.children.length ? strip : null;
+}
+
+/* ===========================================================
+   일차 요약 자동 생성 — Supabase Edge Function(travel-summary)이
+   Claude API를 호출해 mainRoute/checkpoints/cautions 를 만들어 줍니다.
+   =========================================================== */
+const SUMMARY_FN_URL = 'https://ctjinobcioovomjoryjt.supabase.co/functions/v1/travel-summary';
+
+function regenerateDaySummary(trip, day, btn) {
+  const dayItems = itemsOfDay(trip.id, day);
+  if (dayItems.length === 0) { showToast('이 날에 등록된 일정이 없어요.'); return; }
+  if (!window.CAMP_SUPABASE || !window.CAMP_SUPABASE.anonKey) {
+    showToast('함께 쓰기 설정이 안 되어 있어서 자동 요약을 쓸 수 없어요.');
+    return;
+  }
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '생성 중...';
+
+  fetch(SUMMARY_FN_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${window.CAMP_SUPABASE.anonKey}`,
+      apikey: window.CAMP_SUPABASE.anonKey,
+    },
+    body: JSON.stringify({
+      day,
+      items: dayItems.map((i) => ({
+        time: i.time, category: i.category, schedule: i.schedule, location: i.location,
+      })),
+    }),
+  })
+    .then((res) => res.json().catch(() => ({})).then((body) => ({ ok: res.ok, body })))
+    .then(({ ok, body }) => {
+      if (!ok || !body || !body.summary) {
+        throw new Error((body && body.error) || '요약 생성에 실패했어요.');
+      }
+      const { mainRoute, checkpoints, cautions } = body.summary;
+      const existing = travel.summaries.find((s) => s.tripId === trip.id && s.day === day);
+      if (existing) {
+        existing.route = mainRoute || '';
+        existing.points = checkpoints || '';
+        existing.cautions = cautions || '';
+        existing.updatedAt = Date.now();
+      } else {
+        travel.summaries.push({
+          id: newId(), tripId: trip.id, day,
+          route: mainRoute || '', points: checkpoints || '', cautions: cautions || '',
+          updatedAt: Date.now(),
+        });
+      }
+      saveTravel();
+      renderPanel();
+      showToast(`${day}일차 요약을 새로 만들었어요`);
+    })
+    .catch((err) => {
+      showToast(err.message || '요약 생성에 실패했어요.');
+      btn.disabled = false;
+      btn.textContent = original;
+    });
 }
 
 function buildDayJumpNav(trip) {

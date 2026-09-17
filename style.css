@@ -1072,7 +1072,14 @@ input:focus-visible {
   text-decoration: none;
   display: block;
 }
-.summary-card-title { margin: 0 0 6px; font-size: 0.76rem; font-weight: 800; color: var(--text); }
+.summary-card-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.summary-card-title { margin: 0; font-size: 0.76rem; font-weight: 800; color: var(--text); text-decoration: none; }
+.summary-gen-btn {
+  flex: none; border: none; background: var(--primary-soft); color: var(--primary-deep);
+  font-size: 0.6rem; font-weight: 700; padding: 3px 7px; border-radius: 999px;
+  cursor: pointer; white-space: nowrap; font-family: inherit;
+}
+.summary-gen-btn:disabled { opacity: 0.5; cursor: default; }
 .summary-row { margin-bottom: 5px; }
 .summary-row:last-child { margin-bottom: 0; }
 .summary-label { display: block; font-size: 0.68rem; font-weight: 700; color: var(--text-dim); }
