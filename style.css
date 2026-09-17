@@ -1368,6 +1368,21 @@ tr.item-tr.drop-below td { box-shadow: inset 0 -3px 0 var(--primary); }
 .checklist-item.checked span.text { color: var(--text-faint); text-decoration: line-through; }
 .checklist-add-row { display: flex; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--glass-edge); }
 
+.modal-section-title { margin: 0 0 8px; font-size: 0.82rem; font-weight: 800; color: var(--text); }
+.currency-add-row { display: flex; gap: 6px; margin-top: 10px; }
+.currency-name-input { flex: 1.4; min-width: 0; padding: 9px 10px; font-size: 0.85rem; }
+.currency-amount-input { flex: 1; min-width: 0; padding: 9px 8px; font-size: 0.85rem; }
+.currency-item {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  border: 1px solid var(--glass-edge); border-radius: var(--radius-sm);
+  padding: 8px 10px; font-size: 0.82rem; background: rgba(255,255,255,0.5);
+}
+.currency-name { font-weight: 700; color: var(--text); flex: 0 0 auto; min-width: 44px; }
+.currency-field { display: flex; align-items: center; gap: 4px; font-size: 0.72rem; color: var(--text-dim); flex: 0 0 auto; }
+.currency-field .currency-amount-input { width: 68px; flex: none; padding: 5px 6px; font-size: 0.78rem; }
+.currency-diff { font-size: 0.7rem; font-weight: 700; color: var(--att2); margin-left: auto; }
+.currency-diff.short { color: var(--danger); }
+
 /* ---- 동선(지도) 모달 ---- */
 .route-day-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .route-day-pill {

@@ -29,9 +29,21 @@ const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '
 const DAY_COLORS = ['#0EA5E9', '#F59E0B', '#10B981', '#8B5CF6', '#EF4444', '#EC4899', '#14B8A6', '#F97316'];
 
 // ---- state ----
-// travel = { trips, items, flights, stays, checks, summaries }  (모두 평평한 목록, 각 행에 tripId)
+// travel = { trips, items, flights, stays, checks, summaries, currency }  (모두 평평한 목록, 각 행에 tripId)
 function emptyTravel() {
-  return { trips: [], items: [], flights: [], stays: [], checks: [], summaries: [] };
+  return { trips: [], items: [], flights: [], stays: [], checks: [], summaries: [], currency: [] };
+}
+
+/** 환전액 한 줄(통화 이름 + 필요 자금 + 준비한 금액). */
+function normalizeCurrencyItem(c) {
+  return {
+    id: c.id,
+    tripId: c.tripId,
+    name: c.name || '',
+    needed: typeof c.needed === 'number' ? c.needed : Number(c.needed) || 0,
+    prepared: typeof c.prepared === 'number' ? c.prepared : Number(c.prepared) || 0,
+    updatedAt: c.updatedAt || Date.now(),
+  };
 }
 
 /** att 는 늘 3칸(첨부 1/2/3)을 유지합니다. */
@@ -68,6 +80,7 @@ function normalizeTravel(raw) {
     stays: Array.isArray(t.stays) ? t.stays : [],
     checks: Array.isArray(t.checks) ? t.checks : [],
     summaries: Array.isArray(t.summaries) ? t.summaries : [],
+    currency: (Array.isArray(t.currency) ? t.currency : []).map(normalizeCurrencyItem),
   };
 }
 
@@ -183,6 +196,9 @@ function staysOfTrip(tripId) {
 }
 function checksOfTrip(tripId) {
   return travel.checks.filter((c) => c.tripId === tripId);
+}
+function currencyOfTrip(tripId) {
+  return travel.currency.filter((c) => c.tripId === tripId);
 }
 function summaryOf(tripId, day) {
   return travel.summaries.find((s) => s.tripId === tripId && s.day === day) || null;
@@ -359,6 +375,7 @@ function deleteTrip(trip) {
   travel.stays = travel.stays.filter((s) => s.tripId !== id);
   travel.checks = travel.checks.filter((c) => c.tripId !== id);
   travel.summaries = travel.summaries.filter((s) => s.tripId !== id);
+  travel.currency = travel.currency.filter((c) => c.tripId !== id);
   saveTravel();
   setActiveTrip(travel.trips[0] ? sortedTrips()[0].id : null);
   renderAll();
@@ -1607,7 +1624,57 @@ function buildAccommodationDialog(trip) {
 function buildChecklistDialog(trip) {
   const card = document.createElement('div');
   card.className = 'modal-card';
-  modalHeader(card, '체크리스트', '여행 준비물을 관리하세요.');
+  modalHeader(card, '체크리스트', '환전액과 여행 준비물을 관리하세요.');
+
+  // ---- 환전액 (필요 자금 / 준비금) ----
+  const currencyTitle = document.createElement('p');
+  currencyTitle.className = 'modal-section-title';
+  currencyTitle.textContent = '환전액 (필요 자금 / 준비금)';
+  card.appendChild(currencyTitle);
+
+  const currencyList = document.createElement('ul');
+  currencyList.className = 'modal-list currency-list';
+  card.appendChild(currencyList);
+
+  const currencyAddRow = document.createElement('div');
+  currencyAddRow.className = 'currency-add-row';
+  const currencyNameInput = document.createElement('input');
+  currencyNameInput.type = 'text';
+  currencyNameInput.className = 'cell-input currency-name-input';
+  currencyNameInput.placeholder = '통화 (예: 달러)';
+  const currencyNeededInput = document.createElement('input');
+  currencyNeededInput.type = 'number';
+  currencyNeededInput.step = 'any';
+  currencyNeededInput.className = 'cell-input currency-amount-input';
+  currencyNeededInput.placeholder = '필요';
+  const currencyPreparedInput = document.createElement('input');
+  currencyPreparedInput.type = 'number';
+  currencyPreparedInput.step = 'any';
+  currencyPreparedInput.className = 'cell-input currency-amount-input';
+  currencyPreparedInput.placeholder = '준비';
+  const currencyAddBtn = document.createElement('button');
+  currencyAddBtn.type = 'button';
+  currencyAddBtn.className = 'btn btn-primary small';
+  currencyAddBtn.textContent = '추가';
+  currencyAddRow.appendChild(currencyNameInput);
+  currencyAddRow.appendChild(currencyNeededInput);
+  currencyAddRow.appendChild(currencyPreparedInput);
+  currencyAddRow.appendChild(currencyAddBtn);
+  card.appendChild(currencyAddRow);
+
+  const currencyErrorEl = document.createElement('p');
+  currencyErrorEl.className = 'modal-error hidden';
+  card.appendChild(currencyErrorEl);
+
+  const divider = document.createElement('hr');
+  divider.className = 'modal-divider';
+  card.appendChild(divider);
+
+  // ---- 여행 준비물 ----
+  const checklistTitle = document.createElement('p');
+  checklistTitle.className = 'modal-section-title';
+  checklistTitle.textContent = '여행 준비물';
+  card.appendChild(checklistTitle);
 
   const list = document.createElement('ul');
   list.className = 'modal-list';
@@ -1641,6 +1708,108 @@ function buildChecklistDialog(trip) {
   closeBtn.addEventListener('click', closeModal);
   actions.appendChild(closeBtn);
   card.appendChild(actions);
+
+  function renderCurrencyList() {
+    currencyList.innerHTML = '';
+    const items = currencyOfTrip(trip.id);
+    if (items.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'list-empty';
+      li.textContent = '아직 등록된 환전 계획이 없습니다.';
+      currencyList.appendChild(li);
+      return;
+    }
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.className = 'currency-item';
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'currency-name';
+      nameEl.textContent = item.name;
+
+      const neededField = document.createElement('label');
+      neededField.className = 'currency-field';
+      neededField.textContent = '필요 ';
+      const neededInput = document.createElement('input');
+      neededInput.type = 'number';
+      neededInput.step = 'any';
+      neededInput.className = 'cell-input currency-amount-input';
+      neededInput.value = item.needed;
+      neededInput.addEventListener('change', () => {
+        item.needed = Number(neededInput.value) || 0;
+        item.updatedAt = Date.now();
+        saveTravel();
+        renderCurrencyList();
+      });
+      neededField.appendChild(neededInput);
+
+      const preparedField = document.createElement('label');
+      preparedField.className = 'currency-field';
+      preparedField.textContent = '준비 ';
+      const preparedInput = document.createElement('input');
+      preparedInput.type = 'number';
+      preparedInput.step = 'any';
+      preparedInput.className = 'cell-input currency-amount-input';
+      preparedInput.value = item.prepared;
+      preparedInput.addEventListener('change', () => {
+        item.prepared = Number(preparedInput.value) || 0;
+        item.updatedAt = Date.now();
+        saveTravel();
+        renderCurrencyList();
+      });
+      preparedField.appendChild(preparedInput);
+
+      const diff = item.prepared - item.needed;
+      const diffEl = document.createElement('span');
+      diffEl.className = 'currency-diff' + (diff < 0 ? ' short' : '');
+      diffEl.textContent = diff === 0 ? '딱 맞음' : (diff > 0 ? `여유 ${diff}` : `부족 ${Math.abs(diff)}`);
+
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'modal-link-btn danger';
+      delBtn.textContent = '삭제';
+      delBtn.addEventListener('click', () => {
+        travel.currency = travel.currency.filter((c) => c.id !== item.id);
+        saveTravel();
+        renderCurrencyList();
+      });
+
+      li.appendChild(nameEl);
+      li.appendChild(neededField);
+      li.appendChild(preparedField);
+      li.appendChild(diffEl);
+      li.appendChild(delBtn);
+      currencyList.appendChild(li);
+    });
+  }
+
+  function handleCurrencyAdd() {
+    const name = currencyNameInput.value.trim();
+    if (!name) {
+      currencyErrorEl.textContent = '통화 이름을 입력해주세요.';
+      currencyErrorEl.classList.remove('hidden');
+      return;
+    }
+    currencyErrorEl.classList.add('hidden');
+    travel.currency.push({
+      id: newId(),
+      tripId: trip.id,
+      name,
+      needed: Number(currencyNeededInput.value) || 0,
+      prepared: Number(currencyPreparedInput.value) || 0,
+      updatedAt: Date.now(),
+    });
+    saveTravel();
+    currencyNameInput.value = '';
+    currencyNeededInput.value = '';
+    currencyPreparedInput.value = '';
+    renderCurrencyList();
+    currencyNameInput.focus();
+  }
+  currencyAddBtn.addEventListener('click', handleCurrencyAdd);
+  [currencyNameInput, currencyNeededInput, currencyPreparedInput].forEach((el) => {
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleCurrencyAdd(); });
+  });
 
   function renderList() {
     list.innerHTML = '';
@@ -1698,6 +1867,7 @@ function buildChecklistDialog(trip) {
   addBtn.addEventListener('click', handleAdd);
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAdd(); });
 
+  renderCurrencyList();
   renderList();
   return card;
 }
@@ -2057,6 +2227,7 @@ window.CampApp = {
       stays: reconcileArrayById(travel.stays, incoming.stays),
       checks: reconcileArrayById(travel.checks, incoming.checks),
       summaries: reconcileArrayById(travel.summaries, incoming.summaries),
+      currency: reconcileArrayById(travel.currency, incoming.currency),
     };
     localStorage.setItem(LS_TRAVEL, JSON.stringify(travel));
 

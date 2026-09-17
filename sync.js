@@ -21,7 +21,7 @@
   var LS_TRAVEL = 'coupleLog.travel.v1';
 
   function emptyTravel() {
-    return { trips: [], items: [], flights: [], stays: [], checks: [], summaries: [] };
+    return { trips: [], items: [], flights: [], stays: [], checks: [], summaries: [], currency: [] };
   }
 
   var PUSH_DELAY = 1500;
@@ -170,6 +170,7 @@
       stays: mergeList(base.stays, mine.stays, theirs.stays, undefined, mergeRow),
       checks: mergeList(base.checks, mine.checks, theirs.checks, undefined, mergeRow),
       summaries: mergeList(base.summaries, mine.summaries, theirs.summaries, undefined, mergeRow),
+      currency: mergeList(base.currency, mine.currency, theirs.currency, undefined, mergeRow),
     };
   }
 
