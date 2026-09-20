@@ -32,8 +32,18 @@
   function clone(value) {
     return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
   }
+  /** 키 순서가 달라도(예: 합칠 때 새로 조립한 객체, 서버가 돌려준 JSON) 내용만 같으면 같다고 봅니다. */
+  function canonical(value) {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+      var out = {};
+      Object.keys(value).sort().forEach(function (k) { out[k] = canonical(value[k]); });
+      return out;
+    }
+    return value;
+  }
   function same(a, b) {
-    return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+    return JSON.stringify(canonical(a === undefined ? null : a)) === JSON.stringify(canonical(b === undefined ? null : b));
   }
   function readLS(key, fallback) {
     try {
