@@ -879,9 +879,14 @@ function renderMenuChips(trip) {
   });
 }
 
-/** 칸에 메뉴를 넣습니다. 적어 넣은 것과 똑같이 처리되도록 input 을 흘려보냅니다. */
+/**
+ * 칸에 메뉴를 넣습니다. 이미 적힌 게 있으면 지우지 않고 쉼표로 이어 붙입니다.
+ * ('-' 처럼 끼니를 건너뛴다는 표시만 있던 칸은 새로 넣는 메뉴로 바꿔치기합니다.)
+ * 적어 넣은 것과 똑같이 처리되도록 input 을 흘려보냅니다.
+ */
 function dropMenuInto(cell, text) {
-  cell.value = text;
+  const current = cell.value.trim();
+  cell.value = (current && !isNoMeal(current)) ? `${current}, ${text}` : text;
   cell.dispatchEvent(new Event('input'));
 }
 

@@ -311,9 +311,13 @@
 
         var merged = mergeState(base, mine, remote);
 
-        // 이 폰에는 세 칸 모두 실제로 적어 두고, 화면에는 지금 페이지가 아는 만큼만 반영합니다.
-        persistAll(merged);
-        if (window.CampApp) window.CampApp.applyState(merged, { rerender: !options.quiet });
+        // 내 내용과 실제로 달라진 게 있을 때만 화면 밑 데이터를 통째로 바꿔치기합니다.
+        // 그냥 덮어쓰면 지금 입력 칸이 들고 있는 옛 객체가 붕 떠버려서,
+        // 그 뒤로 타자 치는 내용이 저장 안 되고 나중에 사라진 것처럼 보입니다.
+        if (!same(merged, mine)) {
+          persistAll(merged);
+          if (window.CampApp) window.CampApp.applyState(merged, { rerender: !options.quiet });
+        }
 
         // 상대에게도 올려 둡니다 (달라진 게 있을 때만)
         if (same(merged, remote)) {
