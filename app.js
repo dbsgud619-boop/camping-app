@@ -1166,7 +1166,61 @@ document.addEventListener('visibilitychange', () => {
 
 /* ===========================================================
    함께 쓰기 다리 (sync.js 가 이 창구로 드나듭니다)
+   -----------------------------------------------------------
+   동기화로 들어온 내용을 적용할 때, trip·meals 객체를 통째로
+   새 것으로 바꿔치기하면 지금 화면의 입력 칸이 붙잡고 있던
+   객체가 붕 떠 버립니다(그 뒤로 타자 친 내용이 저장 안 되다가
+   나중에 사라진 것처럼 보임). 그래서 있던 객체는 그대로 두고
+   값만 옮겨 담습니다.
    =========================================================== */
+function reconcileMeals(existingMeals, nextMeals) {
+  nextMeals = nextMeals && typeof nextMeals === 'object' ? nextMeals : {};
+  Object.keys(nextMeals).forEach((iso) => {
+    if (!existingMeals[iso]) existingMeals[iso] = {};
+    const day = existingMeals[iso];
+    const nextDay = nextMeals[iso] || {};
+    Object.keys(day).forEach((key) => {
+      if (!(key in nextDay)) delete day[key];
+    });
+    Object.keys(nextDay).forEach((key) => { day[key] = nextDay[key]; });
+  });
+  Object.keys(existingMeals).forEach((iso) => {
+    if (!(iso in nextMeals)) delete existingMeals[iso];
+  });
+}
+
+/** id 를 가진 목록(준비물·메뉴)을 같은 자리에 있던 객체는 그대로 두고 값만 맞춥니다. */
+function reconcileListById(existingList, nextList) {
+  nextList = Array.isArray(nextList) ? nextList : [];
+  const byId = new Map(existingList.map((item) => [item.id, item]));
+  return nextList.map((next) => {
+    const cur = byId.get(next.id);
+    if (!cur) return next;
+    Object.keys(next).forEach((key) => { cur[key] = next[key]; });
+    return cur;
+  });
+}
+
+/** 있던 일정 객체는 그대로 두고 값만 맞춥니다. 새 일정은 그대로 들여옵니다. */
+function reconcileTrips(nextTrips) {
+  const byId = new Map(trips.map((t) => [t.id, t]));
+  return nextTrips.map((next) => {
+    const cur = byId.get(next.id);
+    if (!cur) return next;
+    cur.place = next.place;
+    cur.start = next.start;
+    cur.end = next.end;
+    cur.createdAt = next.createdAt;
+    cur.updatedAt = next.updatedAt;
+    cur.gear = reconcileListById(Array.isArray(cur.gear) ? cur.gear : [], next.gear);
+    cur.menus = reconcileListById(Array.isArray(cur.menus) ? cur.menus : [], next.menus);
+    cur.checks = next.checks && typeof next.checks === 'object' ? next.checks : {};
+    if (!cur.meals || typeof cur.meals !== 'object') cur.meals = {};
+    reconcileMeals(cur.meals, next.meals);
+    return cur;
+  });
+}
+
 window.CampApp = {
   getState() {
     return {
@@ -1178,7 +1232,8 @@ window.CampApp = {
   /** 합쳐진 기록을 이 폰에 들여놓습니다. (다시 올려 보내지는 않습니다) */
   applyState(state, options) {
     if (!state) return;
-    trips = Array.isArray(state.trips) ? state.trips.map(normalizeTrip) : [];
+    const nextTrips = Array.isArray(state.trips) ? state.trips.map(normalizeTrip) : [];
+    trips = reconcileTrips(nextTrips);
     sharedGear = Array.isArray(state.sharedGear) ? state.sharedGear : [];
 
     // 방에 예전 방식(모든 일정 공통)의 메뉴가 남아 있으면 일정마다 옮겨 담습니다.
