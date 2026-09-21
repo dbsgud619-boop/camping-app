@@ -24,6 +24,24 @@ function stateLabel(state) {
   return '아직';
 }
 
+// ---- 일반(이번 일정만) 준비물의 세 가지 상태 ----
+// 없음 → 사야함 → 있음 → 챙김(체크) → 없음 …
+const ST_NEED = 'need';
+const ST_HAVE = 'have';
+
+function nextTripGearState(state) {
+  if (state === ST_NEED) return ST_HAVE;
+  if (state === ST_HAVE) return ST_DONE;
+  if (state === ST_DONE) return null;
+  return ST_NEED;
+}
+function tripStateLabel(state) {
+  if (state === ST_NEED) return '사야함';
+  if (state === ST_HAVE) return '있음';
+  if (state === ST_DONE) return '챙김';
+  return '아직';
+}
+
 // ---- 하루에 기입할 수 있는 끼니 ----
 // hint : 빈 칸에 흐리게 보이는 안내 문구
 // main : 아침·점심·저녁은 주 끼니라 굵게, 나머지는 곁들이는 끼니라 흐리게
@@ -88,7 +106,7 @@ function normalizeTrip(trip) {
   if (!trip.meals || typeof trip.meals !== 'object') trip.meals = {};
 
   trip.gear = trip.gear.map((item) => {
-    if (item.state === ST_DONE || item.state === ST_SKIP) return item;
+    if (item.state === ST_DONE || item.state === ST_NEED || item.state === ST_HAVE) return item;
     const state = item.done === true ? ST_DONE : null;
     return { id: item.id, text: item.text, state };
   });
@@ -497,7 +515,7 @@ function buildTripGear(trip, body) {
 
   const hint = document.createElement('p');
   hint.className = 'gear-hint';
-  hint.textContent = '줄을 누를 때마다 : 챙김 ✓ → 이번엔 안 챙김 ▲ → 해제';
+  hint.textContent = '줄을 누를 때마다 : 사야함 → 있음 ● → 챙김 ✓ → 해제';
 
   form.appendChild(row);
   form.appendChild(hint);
@@ -585,17 +603,13 @@ function renderTripGearProgress(trip) {
 
 /** 준비물 한 줄. 줄을 누르면 상태가 돌고, 나머지 버튼은 각자 동작합니다. */
 function buildGearRow(item, options) {
-  const state = options.state || null;
-
   const li = document.createElement('li');
-  li.className = 'gear-item'
-    + (state === ST_DONE ? ' done' : '')
-    + (state === ST_SKIP ? ' skip' : '');
-  li.setAttribute('aria-label', `${item.text} — ${stateLabel(state)}`);
+  li.className = 'gear-item' + (options.stateClass ? ` ${options.stateClass}` : '');
+  li.setAttribute('aria-label', `${item.text} — ${options.stateLabel}`);
 
   const check = document.createElement('span');
   check.className = 'gear-check';
-  check.textContent = state === ST_SKIP ? '▲' : '✓';
+  check.textContent = options.icon || '';
   check.setAttribute('aria-hidden', 'true');
 
   const text = document.createElement('span');
@@ -604,19 +618,6 @@ function buildGearRow(item, options) {
 
   const actions = document.createElement('span');
   actions.className = 'gear-actions';
-
-  if (options.onPromote) {
-    const up = document.createElement('button');
-    up.type = 'button';
-    up.className = 'gear-act gear-promote';
-    up.textContent = '공용으로';
-    up.setAttribute('aria-label', `${item.text}을(를) 공용 준비물로 옮기기`);
-    up.addEventListener('click', (e) => {
-      e.stopPropagation();
-      options.onPromote();
-    });
-    actions.appendChild(up);
-  }
 
   const edit = document.createElement('button');
   edit.type = 'button';
@@ -690,11 +691,14 @@ function renderSharedGearList(trip) {
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  const sharedRows = sharedGear.map((item) =>
-    buildGearRow(item, {
-      state: trip.checks[item.id] || null,
+  const sharedRows = sharedGear.map((item) => {
+    const state = trip.checks[item.id] || null;
+    return buildGearRow(item, {
+      stateClass: state === ST_DONE ? 'done' : state === ST_SKIP ? 'skip' : '',
+      stateLabel: stateLabel(state),
+      icon: state === ST_SKIP ? '▲' : '✓',
       onToggle: () => {
-        const next = nextState(trip.checks[item.id] || null);
+        const next = nextState(state);
         if (next) trip.checks[item.id] = next;
         else delete trip.checks[item.id];
         saveTrips();
@@ -702,8 +706,8 @@ function renderSharedGearList(trip) {
       },
       onEdit: () => editGearText(trip, item, 'shared'),
       onDelete: () => deleteSharedGear(trip, item),
-    })
-  );
+    });
+  });
 
   wrap.appendChild(
     buildGearSection(
@@ -720,11 +724,15 @@ function renderTripGearList(trip) {
   if (!wrap) return;
   wrap.innerHTML = '';
 
-  const tripRows = trip.gear.map((item) =>
-    buildGearRow(item, {
-      state: item.state || null,
+  const tripRows = trip.gear.map((item) => {
+    const state = item.state || null;
+    const icon = state === ST_NEED ? '?' : state === ST_HAVE ? '●' : state === ST_DONE ? '✓' : '';
+    return buildGearRow(item, {
+      stateClass: state ? `st-${state}` : '',
+      stateLabel: tripStateLabel(state),
+      icon,
       onToggle: () => {
-        item.state = nextState(item.state || null);
+        item.state = nextTripGearState(state);
         saveTrips();
         refreshGear(trip);
       },
@@ -734,9 +742,8 @@ function renderTripGearList(trip) {
         saveTrips();
         refreshGear(trip);
       },
-      onPromote: () => promoteToShared(trip, item),
-    })
-  );
+    });
+  });
 
   wrap.appendChild(
     buildGearSection(
@@ -788,22 +795,10 @@ function deleteSharedGear(trip, item) {
   refreshGear(trip);
 }
 
-/** 이 일정에만 있던 항목을 공용으로 옮깁니다. 체크 상태는 그대로 가져갑니다. */
-function promoteToShared(trip, item) {
-  trip.gear = trip.gear.filter((g) => g.id !== item.id);
-  sharedGear.push({ id: item.id, text: item.text });
-  if (item.state) trip.checks[item.id] = item.state;
-
-  saveSharedGear();
-  saveTrips();
-  refreshGear(trip);
-  showToast(`'${item.text}'을(를) 공용으로 옮겼어요`);
-}
-
 /**
  * 준비물만 다시 그립니다. 입력칸 포커스를 잃지 않도록 패널 전체는 건드리지 않습니다.
- * 공용 ↔ 일반 사이를 옮기는 동작도 있어서 둘 다 새로 그리되, 지금 탭이 아닌 쪽은
- * DOM 이 없어 조용히 넘어갑니다 (renderSharedGearList 등의 wrap 가드).
+ * 공용·일반 둘 다 새로 그리되, 지금 탭이 아닌 쪽은 DOM 이 없어 조용히 넘어갑니다
+ * (renderSharedGearList 등의 wrap 가드).
  */
 function refreshGear(trip) {
   renderSharedGearList(trip);
