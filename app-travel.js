@@ -425,7 +425,282 @@ function buildToolbar(trip) {
   let summaryBtn;
   summaryBtn = make('🤖 요약 확인', () => runSummaryCheckFromButton(trip, summaryBtn));
   bar.appendChild(summaryBtn);
+  bar.appendChild(make('📤 공유하기', () => shareTrip(trip)));
   return bar;
+}
+
+/* ===========================================================
+   공유하기 — 지금 이 여행 내용을 정지된 HTML 한 장으로 내보냅니다.
+   실시간으로 이어져 있는 링크가 아니라 그 순간의 스냅샷이라, 앱에서
+   나중에 고쳐도 이미 보낸 파일에는 반영되지 않습니다.
+   =========================================================== */
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function shareFileName(trip) {
+  const safe = (trip.name || '여행').replace(/[\\/:*?"<>|]+/g, '').trim() || '여행';
+  return `${safe}_${trip.start}_여행일지.html`;
+}
+
+function buildShareRow(item) {
+  const cat = categoryInfo(item.category);
+  const schedCell = item.schedule
+    ? `${cat ? `<span class="item-cat-icon">${escapeHtml(cat.icon)}</span>` : ''}${escapeHtml(item.schedule)}`
+    : `<span class="no-schedule">(미정)</span>`;
+
+  const attCells = [1, 2, 3].map((slot) => {
+    const att = item.att[slot - 1];
+    if (!att.text && !att.image) return '<td>-</td>';
+    const badge = att.text ? `<span class="att-badge att${slot}">${escapeHtml(att.text)}</span>` : '';
+    const img = att.image ? `<img class="att-thumb" src="${att.image}" alt="${escapeHtml(att.text || '첨부 사진')}">` : '';
+    return `<td>${badge}${img}</td>`;
+  }).join('');
+
+  return `<tr>
+    <td>${escapeHtml(item.time || '-')}</td>
+    <td>${schedCell}</td>
+    <td>${escapeHtml(item.location || '-')}</td>
+    ${attCells}
+  </tr>`;
+}
+
+function buildShareHtml(trip) {
+  const dates = tripDates(trip);
+  const nights = nightsOf(trip);
+  const lengthLabel = nights > 0 ? `${nights}박 ${nights + 1}일` : '당일치기';
+
+  const summaryCards = dates.map((iso, index) => {
+    const day = index + 1;
+    const s = summaryOf(trip.id, day);
+    const dayItems = itemsOfDay(trip.id, day);
+    if (!s && dayItems.length === 0) return '';
+
+    const cautionRow = s && s.cautions
+      ? `<div class="s-row"><span class="s-label caution">주의사항</span><p class="s-text caution">${escapeHtml(s.cautions)}</p></div>`
+      : '';
+    return `
+      <div class="summary-card">
+        <p class="summary-card-title">${day}일차 요약</p>
+        <div class="s-row"><span class="s-label">주요 동선</span><p class="s-text">${escapeHtml(s && s.route ? s.route : (s ? '-' : '아직 요약이 없어요'))}</p></div>
+        <div class="s-row"><span class="s-label">체크포인트</span><p class="s-text">${escapeHtml(s && s.points ? s.points : (s ? '-' : '아직 요약이 없어요'))}</p></div>
+        ${cautionRow}
+      </div>`;
+  }).join('');
+
+  const daySections = dates.map((iso, index) => {
+    const day = index + 1;
+    const flightLabel = flightsOfTrip(trip.id)
+      .filter((f) => isDateWithinRange(iso, f.depDate, f.arrDate))
+      .map((f) => `${f.airline} ${f.code}`)
+      .join(', ');
+    const stayLabel = staysOfTrip(trip.id)
+      .filter((s) => isDateWithinRange(iso, s.checkIn, s.checkOut))
+      .map((s) => accommodationLabelFor(iso, s))
+      .join(', ');
+
+    const pills = [
+      flightLabel ? `<span class="day-pill flight">항공편: ${escapeHtml(flightLabel)}</span>` : '',
+      stayLabel ? `<span class="day-pill stay">숙소: ${escapeHtml(stayLabel)}</span>` : '',
+    ].join('');
+
+    const dayItems = itemsOfDay(trip.id, day);
+    const rows = dayItems.length
+      ? dayItems.map(buildShareRow).join('')
+      : `<tr class="empty-row"><td colspan="6">이 날의 일정이 없습니다.</td></tr>`;
+
+    return `
+      <section class="day-section">
+        <div class="day-section-head">
+          <div class="day-title-group">
+            <span class="day-badge">${day}</span>
+            <div class="day-title-text">
+              <p class="day-title">${day}일차</p>
+              <div class="day-meta">
+                <span class="day-meta-date">${escapeHtml(formatDisplayDate(iso))} (${escapeHtml(toKoreanWeekday(iso))})</span>
+                ${pills}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="itinerary-scroll">
+          <table class="itinerary-table">
+            <colgroup><col style="width:60px"><col style="width:150px"><col style="width:90px"><col style="width:75px"><col style="width:75px"><col style="width:70px"></colgroup>
+            <thead><tr><th>시간</th><th>일정</th><th>위치</th><th class="att1">별첨1</th><th class="att2">별첨2</th><th class="att3">별첨3</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </section>`;
+  }).join('');
+
+  const checks = checksOfTrip(trip.id);
+  const checklistRows = checks.length
+    ? checks.map((item) => `
+        <li class="checklist-item${item.checked ? ' checked' : ''}">
+          <span class="check-mark">${item.checked ? '✓' : ''}</span>
+          <span class="text">${escapeHtml(item.text)}</span>
+        </li>`).join('')
+    : `<li class="list-empty">등록된 준비물이 없습니다.</li>`;
+
+  const currencyItems = currencyOfTrip(trip.id);
+  const currencyRows = currencyItems.length
+    ? currencyItems.map((c) => {
+        const diff = c.prepared - c.needed;
+        const diffText = diff === 0 ? '딱 맞음' : (diff > 0 ? `여유 ${diff}` : `부족 ${Math.abs(diff)}`);
+        return `
+          <li class="currency-item">
+            <span class="currency-name">${escapeHtml(c.name)}</span>
+            <span class="currency-field">필요 ${escapeHtml(c.needed)}</span>
+            <span class="currency-field">준비 ${escapeHtml(c.prepared)}</span>
+            <span class="currency-diff${diff < 0 ? ' short' : ''}">${diffText}</span>
+          </li>`;
+      }).join('')
+    : `<li class="list-empty">등록된 환전 계획이 없습니다.</li>`;
+
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const exportedAt = `${now.getFullYear()}.${pad(now.getMonth() + 1)}.${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(trip.name)} · 여행일지 공유본</title>
+<style>${SHARE_CSS}</style>
+</head>
+<body>
+<header class="app-header">
+  <p class="eyebrow">TRAVEL LOG · 공유본</p>
+  <h1>🗺️ ${escapeHtml(trip.name)}</h1>
+  <p class="trip-dates">${escapeHtml(formatDisplayDate(trip.start))} ~ ${escapeHtml(formatDisplayDate(trip.end))} · ${lengthLabel}</p>
+</header>
+
+${summaryCards ? `<div class="summary-strip">${summaryCards}</div>` : ''}
+
+${daySections}
+
+<section class="share-checklist">
+  <p class="modal-section-title">여행 준비물</p>
+  <ul class="modal-list">${checklistRows}</ul>
+  <p class="modal-section-title" style="margin-top:18px;">환전액 (필요 자금 / 준비금)</p>
+  <ul class="modal-list currency-list">${currencyRows}</ul>
+</section>
+
+<p class="export-note">${exportedAt} 기준으로 내보낸 스냅샷이에요. 이후 앱에서 바뀐 내용은 반영되지 않아요.</p>
+</body>
+</html>`;
+}
+
+const SHARE_CSS = `
+:root{color-scheme:light;}
+*{box-sizing:border-box;}
+body{margin:0;padding:20px 14px 60px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:linear-gradient(160deg,#f0f9ff,#e0f2fe 45%,#bae6fd);color:#0c4a6e;line-height:1.5;}
+.app-header{text-align:center;margin-bottom:18px;}
+.eyebrow{margin:0 0 4px;font-size:.72rem;font-weight:700;letter-spacing:.14em;color:#0284c7;}
+.app-header h1{margin:0;font-size:1.3rem;}
+.trip-dates{margin:4px 0 0;font-size:.85rem;color:#0284c7;}
+
+.summary-strip{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px;margin-bottom:18px;-webkit-overflow-scrolling:touch;}
+.summary-card{flex:0 0 auto;width:220px;background:rgba(255,255,255,.7);border:1px solid rgba(3,105,161,.14);border-radius:14px;padding:12px;box-shadow:0 3px 12px rgba(12,74,110,.07);}
+.summary-card-title{margin:0 0 6px;font-size:.76rem;font-weight:800;}
+.s-row{margin-bottom:5px;}
+.s-row:last-child{margin-bottom:0;}
+.s-label{display:block;font-size:.68rem;font-weight:700;color:#0284c7;}
+.s-label.caution{color:#d97706;}
+.s-text{margin:1px 0 0;font-size:.72rem;}
+.s-text.caution{color:#d97706;}
+
+.day-section{background:rgba(255,255,255,.4);border:1px solid rgba(3,105,161,.14);border-radius:18px;padding:14px;margin-bottom:14px;}
+.day-section-head{margin-bottom:8px;}
+.day-title-group{display:flex;align-items:center;gap:8px;}
+.day-badge{flex:0 0 auto;width:26px;height:26px;border-radius:9px;background:linear-gradient(135deg,#0ea5e9,#0c4a6e);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.8rem;}
+.day-title{margin:0;font-size:.8rem;font-weight:800;}
+.day-meta{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:1px;}
+.day-meta-date{font-size:.72rem;color:#0284c7;}
+.day-pill{font-size:.66rem;font-weight:700;padding:2px 7px;border-radius:999px;}
+.day-pill.flight{background:rgba(217,119,6,.15);color:#d97706;}
+.day-pill.stay{background:rgba(14,165,233,.13);color:#075985;}
+
+.itinerary-scroll{overflow-x:auto;}
+.itinerary-table{width:100%;border-collapse:collapse;font-size:.78rem;}
+.itinerary-table th{text-align:left;font-size:.68rem;font-weight:700;color:#0284c7;padding:5px 6px;border-bottom:1px solid rgba(3,105,161,.14);white-space:nowrap;}
+.itinerary-table th.att1{color:#8b5cf6;}
+.itinerary-table th.att2{color:#10b981;}
+.itinerary-table th.att3{color:#f43f5e;}
+.itinerary-table td{padding:6px;vertical-align:top;word-break:break-word;border-top:1px solid rgba(3,105,161,.14);}
+.itinerary-table .empty-row td{text-align:center;color:#7dd3fc;padding:14px 6px;}
+.itinerary-table .no-schedule{color:#7dd3fc;}
+.item-cat-icon{margin-right:3px;}
+.att-badge{display:inline-block;font-size:.68rem;font-weight:700;padding:1px 6px;border-radius:999px;margin-bottom:3px;}
+.att-badge.att1{background:#f5f3ff;color:#8b5cf6;}
+.att-badge.att2{background:#ecfdf5;color:#10b981;}
+.att-badge.att3{background:#fff1f2;color:#f43f5e;}
+.att-thumb{display:block;max-width:64px;max-height:64px;border-radius:8px;object-fit:cover;margin-top:3px;cursor:zoom-in;}
+
+.share-checklist{background:rgba(255,255,255,.4);border:1px solid rgba(3,105,161,.14);border-radius:18px;padding:16px;margin-top:6px;}
+.modal-section-title{margin:0 0 8px;font-size:.82rem;font-weight:800;}
+.modal-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;}
+.checklist-item{display:flex;align-items:center;gap:8px;font-size:.85rem;padding:7px 9px;background:rgba(255,255,255,.5);border-radius:10px;}
+.checklist-item .check-mark{flex:0 0 auto;width:16px;height:16px;border-radius:5px;border:2px solid rgba(2,132,199,.3);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:800;color:#fff;}
+.checklist-item.checked .check-mark{background:linear-gradient(135deg,#0ea5e9,#0c4a6e);border-color:transparent;}
+.checklist-item.checked .text{color:#7dd3fc;text-decoration:line-through;}
+.currency-item{display:flex;align-items:center;gap:10px;font-size:.8rem;padding:7px 9px;background:rgba(255,255,255,.5);border-radius:10px;flex-wrap:wrap;}
+.currency-name{font-weight:700;}
+.currency-field{color:#0284c7;font-size:.76rem;}
+.currency-diff{font-size:.72rem;font-weight:700;color:#10b981;margin-left:auto;}
+.currency-diff.short{color:#dc2626;}
+.list-empty{color:#7dd3fc;font-size:.82rem;padding:8px 0;}
+
+.export-note{text-align:center;font-size:.72rem;color:#0284c7;opacity:.75;margin-top:22px;}
+
+@media (max-width:480px){
+  .summary-card{width:200px;}
+}
+`;
+
+/** 웹공유(Web Share) 시트가 있으면 파일로 바로 공유하고, 없으면 내려받기로 넘어갑니다. */
+async function shareTrip(trip) {
+  let html;
+  try {
+    html = buildShareHtml(trip);
+  } catch (err) {
+    showToast('공유용 파일을 만들지 못했어요.');
+    return;
+  }
+
+  const fileName = shareFileName(trip);
+  const blob = new Blob([html], { type: 'text/html' });
+
+  try {
+    const file = new File([blob], fileName, { type: 'text/html' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: `${trip.name} 여행일지`,
+        text: `${trip.name} 여행 내용을 정리했어요.`,
+      });
+      return;
+    }
+  } catch (err) {
+    if (err && err.name === 'AbortError') return; // 공유 시트를 취소한 거라 조용히 넘어갑니다.
+  }
+
+  // 공유 시트를 못 쓰는 환경(PC 브라우저 등)이면 파일로 내려받게 합니다.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+  showToast('공유 시트를 지원하지 않아서 파일로 내려받았어요.');
 }
 
 /* ---- 일차별 요약 : 읽기 전용, AI 자동 생성(runSummaryCheck)이나 아래 배치가 채웁니다 ---- */
