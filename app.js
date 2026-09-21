@@ -515,7 +515,7 @@ function buildTripGear(trip, body) {
 
   const hint = document.createElement('p');
   hint.className = 'gear-hint';
-  hint.textContent = '줄을 누를 때마다 : 사야함 → 있음 ● → 챙김 ✓ → 해제';
+  hint.textContent = '줄을 누를 때마다 : 사야함 ? → 있음 ● → 챙김 ✓ → 해제';
 
   form.appendChild(row);
   form.appendChild(hint);
@@ -727,8 +727,10 @@ function renderTripGearList(trip) {
   const tripRows = trip.gear.map((item) => {
     const state = item.state || null;
     const icon = state === ST_NEED ? '?' : state === ST_HAVE ? '●' : state === ST_DONE ? '✓' : '';
+    // '챙김' 은 공용 준비물의 체크 상태와 똑같이 보이도록 .done 스타일을 그대로 씁니다.
+    const stateClass = state === ST_DONE ? 'done' : state ? `st-${state}` : '';
     return buildGearRow(item, {
-      stateClass: state ? `st-${state}` : '',
+      stateClass,
       stateLabel: tripStateLabel(state),
       icon,
       onToggle: () => {
