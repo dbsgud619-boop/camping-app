@@ -1,4 +1,4 @@
-const CACHE_NAME = 'coupleLog-v28';
+const CACHE_NAME = 'coupleLog-v29';
 const ASSETS = [
   './',
   './index.html',
@@ -36,11 +36,16 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-/** 정해진 시간 안에 못 받아오면 실패로 칩니다. */
+/**
+ * 정해진 시간 안에 못 받아오면 실패로 칩니다.
+ * 파일이 고쳐져도 브라우저가 유효기간(Cache-Control: max-age) 안에는 서버에
+ * 물어보지도 않고 예전 응답을 그대로 씁니다. no-store 로 그 캐시를 건너뛰고
+ * 항상 서버에 새로 물어봅니다.
+ */
 function fetchWithTimeout(request) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('timeout')), NETWORK_TIMEOUT);
-    fetch(request).then(
+    fetch(request.url, { cache: 'no-store' }).then(
       (response) => { clearTimeout(timer); resolve(response); },
       (error) => { clearTimeout(timer); reject(error); }
     );
